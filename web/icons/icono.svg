@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <style>
+      @font-face{font-family:P;src:url("file:///usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf")}
+      .t{font-family:P;font-weight:700;text-anchor:middle;letter-spacing:-4px}
+    </style>
+  </defs>
+  <rect width="1024" height="1024" fill="#ffffff"/>
+  <g transform="translate(512 540) scale(0.92) translate(-512 -540)">
+  <!-- casa -->
+  <g fill="none" stroke="#15325a" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 420 L512 128 L874 420"/>
+    <path d="M222 360 V600"/>
+    <path d="M802 360 V470"/>
+  </g>
+  <path d="M676 188 h54 v118 l-54 -44 z" fill="#15325a"/>
+  <!-- ventana -->
+  <g fill="#f68b1f">
+    <rect x="460" y="238" width="48" height="48" rx="5"/><rect x="516" y="238" width="48" height="48" rx="5"/>
+    <rect x="460" y="294" width="48" height="48" rx="5"/><rect x="516" y="294" width="48" height="48" rx="5"/>
+  </g>
+  <!-- swoosh -->
+  <path d="M92 462 C 100 712, 640 712, 912 318 C 630 660, 150 660, 92 462 Z" fill="#f68b1f"/>
+  <!-- carrito -->
+  <g fill="none" stroke="#15325a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M262 400 H306 L350 572 H520"/>
+    <path d="M318 440 H552 L530 530 H340"/>
+    <path d="M376 440 L388 530 M436 440 V530 M494 440 L484 530"/>
+    <path d="M326 485 H542"/>
+  </g>
+  <circle cx="372" cy="606" r="26" fill="#f68b1f" stroke="#ffffff" stroke-width="10"/><circle cx="498" cy="606" r="26" fill="#f68b1f" stroke="#ffffff" stroke-width="10"/>
+  <!-- tabla con lista -->
+  <rect x="592" y="404" width="160" height="196" rx="16" fill="#ffffff" stroke="#15325a" stroke-width="18"/>
+  <rect x="636" y="386" width="72" height="36" rx="10" fill="#15325a"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#34a853" stroke-width="13"><path d="M616 462 l12 12 l20 -24"/><path d="M616 512 l12 12 l20 -24"/><path d="M616 562 l12 12 l20 -24"/></g>
+    <g stroke="#15325a" stroke-width="13"><path d="M668 466 H728"/><path d="M668 516 H728"/><path d="M668 566 H728"/></g>
+  </g>
+  <!-- texto -->
+  <text class="t" x="512" y="812" font-size="212" fill="#15325a">Casita</text>
+  <text class="t" x="512" y="972" font-size="200" fill="#f68b1f">Stock</text>
+  </g>
+</svg>

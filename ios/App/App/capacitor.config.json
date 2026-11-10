@@ -1,0 +1,12 @@
+{
+	"appId": "com.casitastock.app",
+	"appName": "Casita Stock",
+	"webDir": "web",
+	"backgroundColor": "#eef2ee",
+	"ios": {
+		"contentInset": "never",
+		"backgroundColor": "#eef2ee",
+		"limitsNavigationsToAppBoundDomains": false
+	},
+	"packageClassList": []
+}

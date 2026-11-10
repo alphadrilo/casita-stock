@@ -1,0 +1,8 @@
+{
+  "name": "casita-stock",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Inventario del hogar con códigos de barras, lista de compras, gastos y asistente de voz con IA",
+  "engines": { "node": ">=18" }
+}
