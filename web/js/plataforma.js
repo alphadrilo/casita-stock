@@ -31,47 +31,56 @@
   function cerrarGate() { const g = $("#gate"); g.hidden = true; g.innerHTML = ""; document.body.classList.remove("noscroll"); }
   const avisoInstalar = () => (esIOS && !instalada) ? `<div class="notice warn">${ico("alert")}<span><b>Primero instálala:</b> toca el botón Compartir de Safari y luego <b>“Añadir a pantalla de inicio”</b>. Ábrela desde el ícono y entra ahí; así tu sesión queda guardada en la app.</span></div>` : "";
 
+  /* Entrar con correo y contraseña (sin enviar correos: en Supabase, "Confirm email" va apagado) */
   function pasoLogin() {
     return new Promise((fin) => {
       let correo = S.get("cs-correo", "");
-      const pedirCorreo = (msg) => {
-        gate(`<section class="card"><h2 class="gate-h">Bienvenido</h2>
-          <p class="lead">Entra con tu correo. Te enviamos un código para confirmar que eres tú; no necesitas contraseña.</p>
+      let modo = S.get("cs-correo", "") ? "entrar" : "crear";
+      const MSG = (e) => {
+        const m = (e && e.message) || "";
+        if (/invalid login|invalid credentials/i.test(m)) return "Correo o contraseña incorrectos. Revísalos e intenta otra vez.";
+        if (/not confirmed|confirm/i.test(m)) return "Esta cuenta espera confirmación por correo. En Supabase → Authentication → Sign In / Providers → Email, apaga \"Confirm email\" y vuelve a intentarlo.";
+        if (/already registered|already exists/i.test(m)) return "Ya hay una cuenta con ese correo. Entra con tu contraseña.";
+        if (/password/i.test(m) && /least|short|weak|characters/i.test(m)) return "La contraseña es muy corta: usa al menos 8 letras o números.";
+        if (/rate|seconds|too many/i.test(m)) return "Muchos intentos seguidos. Espera un minuto y vuelve a intentarlo.";
+        if (/signups? not allowed|disabled/i.test(m)) return "En Supabase está apagado crear cuentas nuevas (Authentication → Sign In / Providers → Allow new users to sign up).";
+        return "No se pudo entrar. Revisa tu conexión e intenta otra vez.";
+      };
+      const pantalla = (msg) => {
+        const crear = modo === "crear";
+        gate(`<section class="card"><h2 class="gate-h">${crear ? "Crea tu cuenta" : "Bienvenido otra vez"}</h2>
+          <p class="lead">${crear ? "Con tu correo y una contraseña. La usarás para entrar desde cualquier teléfono de la casa." : "Entra con tu correo y tu contraseña."}</p>
           ${avisoInstalar()}
-          <div class="field"><label for="g-mail">Tu correo</label><input type="email" id="g-mail" autocomplete="email" inputmode="email" value="${esc(correo)}" placeholder="tu@correo.com"></div>
-          ${msg ? `<div class="notice bad">${ico("alert")}<span>${esc(msg)}</span></div>` : ""}
-          <button class="btn primary" id="g-send">Enviarme el código</button></section>`);
+          <div class="field"><label for="g-mail">Tu correo</label><input type="email" id="g-mail" autocomplete="username" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(correo)}" placeholder="tu@correo.com"></div>
+          <div class="field"><label for="g-pass">${crear ? "Crea una contraseña" : "Contraseña"}</label>
+            <div class="row" style="flex-wrap:nowrap"><input type="password" id="g-pass" autocomplete="${crear ? "new-password" : "current-password"}" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${crear ? "Al menos 8 letras o números" : "Tu contraseña"}" style="flex:1;min-width:0">
+            <button class="btn sm" id="g-ver" type="button" aria-label="Mostrar contraseña" style="flex:0 0 auto">Ver</button></div></div>
+          ${msg ? `<div class="notice bad" role="alert">${ico("alert")}<span>${esc(msg)}</span></div>` : ""}
+          <button class="btn primary" id="g-go">${crear ? "Crear cuenta" : "Entrar"}</button>
+          <button class="linkbtn" id="g-modo">${crear ? "Ya tengo cuenta: entrar" : "Soy nuevo: crear cuenta"}</button>
+          ${crear ? "" : `<p class="hint" style="margin:0">¿Olvidaste tu contraseña? Quien administra la app puede cambiarla en Supabase → Authentication → Users.</p>`}</section>`);
+        $("#g-ver").onclick = () => { const i = $("#g-pass"); const v = i.type === "password"; i.type = v ? "text" : "password"; $("#g-ver").textContent = v ? "Ocultar" : "Ver"; };
+        $("#g-modo").onclick = () => { correo = $("#g-mail").value.trim().toLowerCase(); modo = crear ? "entrar" : "crear"; pantalla(); };
         const go = async () => {
           correo = $("#g-mail").value.trim().toLowerCase();
-          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return pedirCorreo("Escribe un correo válido, por ejemplo nombre@gmail.com.");
-          const b = $("#g-send"); b.disabled = true; b.textContent = "Enviando…";
-          const { error } = await sb.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
-          if (error) return pedirCorreo(/rate|seconds|security/i.test(error.message) ? "Espera un minuto antes de pedir otro código." : "No se pudo enviar el código. Revisa el correo y tu conexión.");
-          S.set("cs-correo", correo); pedirCodigo();
+          const pass = $("#g-pass").value;
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return pantalla("Escribe un correo válido, por ejemplo nombre@gmail.com.");
+          if (pass.length < (crear ? 8 : 1)) return pantalla(crear ? "La contraseña es muy corta: usa al menos 8 letras o números." : "Escribe tu contraseña.");
+          const b = $("#g-go"); b.disabled = true; b.textContent = crear ? "Creando…" : "Entrando…";
+          try {
+            const r = crear ? await sb.auth.signUp({ email: correo, password: pass }) : await sb.auth.signInWithPassword({ email: correo, password: pass });
+            if (r.error) return pantalla(MSG(r.error));
+            if (!r.data.session) return pantalla(MSG({ message: "not confirmed" }));
+            // Supabase responde sin error a un correo ya registrado cuando la confirmación está apagada: se detecta por identities vacías
+            if (crear && r.data.user && Array.isArray(r.data.user.identities) && !r.data.user.identities.length) { modo = "entrar"; return pantalla(MSG({ message: "already registered" })); }
+            S.set("cs-correo", correo); session = r.data.session; fin();
+          } catch (e) { pantalla(MSG(e)); }
         };
-        $("#g-send").onclick = go; $("#g-mail").onkeydown = (e) => { if (e.key === "Enter") go(); };
+        $("#g-go").onclick = go;
+        $("#g-pass").onkeydown = (e) => { if (e.key === "Enter") go(); };
+        $("#g-mail").onkeydown = (e) => { if (e.key === "Enter") $("#g-pass").focus(); };
       };
-      const pedirCodigo = (msg) => {
-        gate(`<section class="card"><h2 class="gate-h">Revisa tu correo</h2>
-          <p class="lead">Te enviamos un código a <b>${esc(correo)}</b>. Escríbelo aquí. Si no llega en un minuto, mira en Spam o Promociones.</p>
-          <div class="field"><label for="g-code">Código</label><input type="text" id="g-code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456"></div>
-          ${msg ? `<div class="notice bad">${ico("alert")}<span>${esc(msg)}</span></div>` : ""}
-          <button class="btn primary" id="g-ok">Entrar</button>
-          <div class="row"><button class="linkbtn" id="g-back">Cambiar correo</button><button class="linkbtn" id="g-again">Enviar otro código</button></div></section>`);
-        const go = async () => {
-          const token = $("#g-code").value.replace(/\D/g, "");
-          if (token.length < 6) return pedirCodigo("El código tiene 6 números o más.");
-          const b = $("#g-ok"); b.disabled = true; b.textContent = "Entrando…";
-          const { data, error } = await sb.auth.verifyOtp({ email: correo, token, type: "email" });
-          if (error || !data.session) return pedirCodigo("Ese código no sirve o ya venció. Revísalo o pide otro.");
-          session = data.session; fin();
-        };
-        $("#g-ok").onclick = go; $("#g-code").onkeydown = (e) => { if (e.key === "Enter") go(); };
-        $("#g-back").onclick = () => pedirCorreo();
-        $("#g-again").onclick = async () => { await sb.auth.signInWithOtp({ email: correo }); pedirCodigo("Te enviamos un código nuevo."); };
-        setTimeout(() => $("#g-code")?.focus(), 50);
-      };
-      pedirCorreo();
+      pantalla();
     });
   }
 
@@ -408,7 +417,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.3.2${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.3.6${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
