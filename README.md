@@ -4,7 +4,7 @@ Inventario del hogar: evitar compras repetidas, saber qué falta, qué vence y c
 
 **Para instalarla en el iPhone, sigue [GUIA-INSTALACION.md](GUIA-INSTALACION.md).** Para probarla en el simulador o compilarla en Xcode como app nativa, sigue [GUIA-XCODE-IPHONE.md](GUIA-XCODE-IPHONE.md).
 
-**Versión actual: 1.3.2.** Para abrirla en Xcode solo necesitas Xcode: doble clic en `abrir-en-xcode.command` (o abre `ios/App/App.xcodeproj`). Los cambios de cada versión están en `CAMBIOS.md` y en PDF en `docs/cambios/` (se generan con `python3 herramientas/pdf_cambios.py 1.3`).
+**Versión actual: 1.3.6.** Para abrirla en Xcode solo necesitas Xcode: doble clic en `abrir-en-xcode.command` (o abre `ios/App/App.xcodeproj`). Los cambios de cada versión están en `CAMBIOS.md` y en PDF en `docs/cambios/` (se generan con `python3 herramientas/pdf_cambios.py 1.3`).
 
 **Regla del proyecto: todo se diseña y se prueba para iPhone.** La lista de verificación está en [CLAUDE.md](CLAUDE.md).
 
@@ -37,7 +37,7 @@ Inventario del hogar: evitar compras repetidas, saber qué falta, qué vence y c
 ## Arquitectura de la versión instalable
 - `plataforma.js` ofrece `window.claude.use(nombre)` con la misma forma que usaba la versión dentro de Claude (`db`, `user`, `sample`, `downloads`), implementado con Supabase y `/api/ia`. Así `app.js` casi no cambió.
 - Datos: tabla `documentos (hogar_id, coleccion, id, data jsonb)`; cada casa solo ve lo suyo (Row Level Security). Tiempo real por canal de Supabase; al volver a la app se recarga para no perder cambios.
-- Cuentas: correo + código (OTP), sin contraseña; familia por código de invitación.
+- Cuentas: correo y contraseña de Supabase ("Confirm email" apagado, sin enviar correos); familia por código de invitación.
 - IA: el teléfono llama a `/api/ia` con su sesión; el servidor verifica la sesión y llama a la API de Anthropic con la llave guardada en Vercel. Herramientas del asistente (buscar, listar, ver producto, proponer cambios, pedir producto nuevo) se ejecutan en el teléfono contra la base de datos en vivo.
 - Voz: reconocimiento de voz del navegador (Safari) para escuchar, voz del teléfono para responder; respaldo con el dictado del teclado.
 - Sin conexión: el service worker guarda la app; los datos muestran la última copia.
