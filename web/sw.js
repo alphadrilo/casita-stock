@@ -1,10 +1,10 @@
 // Casita Stock — permite abrir la app sin conexión y cargarla rápido.
 // En cada publicación cambia VERSION aquí y el número ?v= en index.html y en la lista APP,
 // para que los teléfonos descarguen los archivos nuevos.
-const VERSION = "casita-v1.3.2";
+const VERSION = "casita-v1.3.6";
 const APP = [
-  "/", "/index.html", "/css/app.css?v=1.3.2",
-  "/js/config-nativo.js?v=1.3.2", "/js/voz.js?v=1.3.2", "/js/plataforma.js?v=1.3.2", "/js/app.js?v=1.3.2", "/js/asistente.js?v=1.3.2", "/js/facturas.js?v=1.3.2",
+  "/", "/index.html", "/css/app.css?v=1.3.6",
+  "/js/config-nativo.js?v=1.3.6", "/js/voz.js?v=1.3.6", "/js/plataforma.js?v=1.3.6", "/js/app.js?v=1.3.6", "/js/asistente.js?v=1.3.6", "/js/facturas.js?v=1.3.6",
   "/vendor/supabase-2.45.4.js", "/vendor/zxing-0.21.3.min.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/favicon.png", "/icons/icon-maskable-512.png",
 ];
 
