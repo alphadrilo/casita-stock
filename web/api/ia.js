@@ -23,6 +23,9 @@ function cors(req, res) {
   res.setHeader("Access-Control-Max-Age", "86400");
 }
 
+// La llave se limpia por si se pegó con espacios, saltos de línea o comillas
+const LLAVE = () => String(process.env.ANTHROPIC_API_KEY || "").trim().replace(/^["']+|["']+$/g, "");
+
 function error(res, status, code, message) {
   res.status(status).json({ error: { code, message } });
 }
@@ -41,7 +44,7 @@ export default async function handler(req, res) {
   cors(req, res);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return error(res, 405, "invalid_request", "Usa POST");
-  if (!process.env.ANTHROPIC_API_KEY) return error(res, 503, "sampling_disabled", "Falta configurar ANTHROPIC_API_KEY en Vercel");
+  if (!LLAVE()) return error(res, 503, "sampling_disabled", "Falta configurar ANTHROPIC_API_KEY en Vercel");
 
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   let user;
@@ -72,7 +75,7 @@ export default async function handler(req, res) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "x-api-key": LLAVE(),
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify(pedido),
@@ -82,10 +85,16 @@ export default async function handler(req, res) {
   }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
+    const msg = (data.error && data.error.message) || "La IA no respondió";
+    // Diagnóstico claro para quien instala: llave inválida, sin créditos, permiso o modelo
     const code = r.status === 429 || r.status === 529 ? "rate_limited"
-      : r.status === 401 || r.status === 403 ? "sampling_disabled"
+      : r.status === 401 ? "bad_key"
+      : r.status === 403 ? "key_forbidden"
+      : r.status === 400 && /credit|balance|billing/i.test(msg) ? "no_credits"
+      : r.status === 404 && /model/i.test(msg) ? "model_unavailable"
       : r.status === 400 ? "invalid_request" : "upstream_error";
-    return error(res, r.status === 400 ? 400 : 502, code, (data.error && data.error.message) || "La IA no respondió");
+    console.error(`[ia] Anthropic ${r.status} ${code}: ${msg}`);
+    return error(res, r.status === 400 && code === "invalid_request" ? 400 : 502, code, msg);
   }
   res.status(200).json({ content: data.content || [], stop_reason: data.stop_reason, model: data.model });
 }
