@@ -406,7 +406,12 @@
         <div class="field"><label for="a-an">Nombre</label><input type="text" id="a-an" maxlength="20" value="${esc(c.nombre)}"></div>
         <div class="field"><label for="a-av">Voz</label><select id="a-av">${opcionesVoz(c.voz)}</select><button class="linkbtn ai" id="a-try">Escuchar cómo suena</button></div>
         <div class="field"><label for="a-id">Idioma para escucharte</label><select id="a-id">${[["es-US", "Español (Estados Unidos)"], ["es-MX", "Español (México)"], ["es-CO", "Español (Colombia)"], ["es-ES", "Español (España)"]].map(([v, l]) => `<option value="${v}" ${v === c.idioma ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-        <button class="check" id="a-hablar" aria-pressed="${c.hablar}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Contestar en voz alta</span><br><span class="cm">Lee sus respuestas con la voz elegida</span></span><span></span></button>
+        <div class="field"><span class="lbl">¿Cómo te atiende ${esc(c.nombre || "tu asistente")}?</span>
+          <div class="ml-opc" role="radiogroup">
+            <label class="${c.modo !== "texto" ? "on" : ""}" data-amod="voz" role="radio" aria-checked="${c.modo !== "texto"}" tabindex="0"><span class="r"></span><span><b>Solo voz (manos libres)</b><span class="h">Habla y te responde en voz alta. En pantalla ves solo lo que entendió y lo que va a guardar.</span></span></label>
+            <label class="${c.modo === "texto" ? "on" : ""}" data-amod="texto" role="radio" aria-checked="${c.modo === "texto"}" tabindex="0"><span class="r"></span><span><b>Voz y texto</b><span class="h">Además muestra toda la conversación escrita, como un chat.</span></span></label>
+          </div><p class="hint" style="margin:0">En los dos modos, nada se guarda sin tu “sí”.</p></div>
+        <button class="check" id="a-hablar" aria-pressed="${c.hablar}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Contestar en voz alta</span><br><span class="cm">En “Voz y texto”, lee sus respuestas con la voz elegida. En “Solo voz” siempre habla.</span></span><span></span></button>
         <button class="check" id="a-cont" aria-pressed="${c.continuo}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Conversación continua</span><br><span class="cm">Después de responder, vuelve a escucharte. Di “gracias” para terminar.</span></span><span></span></button>
       </section>
       ${fam}
@@ -417,7 +422,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.3.6${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.5${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
@@ -431,6 +436,7 @@
     $("#a-try").onclick = () => Voz.hablar(`Hola, soy ${Voz.nombre()}. ¿En qué te ayudo?`, true);
     const tog = (id, key) => { $(id).onclick = () => { const v = !Voz.cfg()[key]; Voz.guardar({ [key]: v }); $(id).setAttribute("aria-pressed", v); }; };
     tog("#a-hablar", "hablar"); tog("#a-cont", "continuo");
+    document.querySelectorAll("[data-amod]").forEach((l) => { const elegir = () => { Voz.guardar({ modo: l.dataset.amod }); document.querySelectorAll("[data-amod]").forEach((x) => { const on = x === l; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); }); }; l.onclick = elegir; l.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); elegir(); } }; });
     if ($("#a-retry")) $("#a-retry").onclick = () => { S.del("cs-config"); location.reload(); };
     $("#a-imp").onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;

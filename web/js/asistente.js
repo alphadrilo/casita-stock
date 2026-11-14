@@ -58,7 +58,9 @@ function fallbackParse(text){
 }
 
 /* Asistente: consulta la base de datos en vivo, propone cambios y la persona confirma */
-let asst={open:false,feed:[],busy:false,ctl:null,draft:"",listening:false,lastVoice:false,ended:false,listenId:0};
+let asst={open:false,feed:[],busy:false,ctl:null,draft:"",listening:false,lastVoice:false,ended:false,listenId:0,parcial:"",verTodo:false,ultimo:null};
+/* Modo manos libres (1.5): en pantalla solo lo que entendió, la respuesta corta y lo que va a guardar */
+const modoVoz=()=>Voz.cfg().modo!=="texto"&&!asst.verTodo;
 async function freshAll(){if(mode==="db"){try{const s=await db.collection("productos").get();return s.docs.map(d=>({...d.data(),id:d.id}))}catch(e){}}return inventory}
 async function freshOne(id){if(mode==="db"){try{const s=await db.collection("productos").doc(id).get();return s.exists?{...s.data(),id}:null}catch(e){}}return inventory.find(x=>x.id===id)||null}
 const compact=p=>{const dl=daysLeft(p);const o={id:p.id,nombre:p.nombre,enCasa:p.cantidad,estado:status(p)[1],avisarCuandoQueden:p.minimo};
@@ -184,6 +186,7 @@ const RX_SI=/^(si|si claro|claro|dale|ok|okay|vale|correcto|de acuerdo|perfecto|
 const RX_NO=/^(no|cancela|cancelar|cancelalo|mejor no|olvidalo|dejalo)\b/;
 const RX_FIN=/^(gracias|muchas gracias|adios|eso es todo|nada mas|chao|hasta luego|listo gracias)\b/;
 const RX_SINCOD=/no tiene codigo|sin codigo/;
+const RX_DESHACER=/^(deshacer|deshazlo|deshaz|deshacerlo|me equivoque|borra eso|quita eso)\b/;
 function sinNombre(t){const n=Voz.cfg().nombre;if(!n)return t;const r=new RegExp("^\\s*(?:oye|hola|hey|ey)?[\\s,]*"+n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"[\\s,.:!]*","i");return t.replace(r,"").trim()||t}
 const pendientes=()=>asst.feed.filter(e=>e.state==="pending"&&(e.k==="cambios"||e.k==="nuevo"));
 async function respuestaRapida(text,bot){
@@ -200,6 +203,7 @@ async function respuestaRapida(text,bot){
   if(p.length&&RX_NO.test(t)&&!RX_SINCOD.test(t)){p.forEach(c=>c.state="cancelled");asst.feed.push({k:"note",text:"La persona canceló lo que estaba pendiente."});bot.text="Está bien, no guardé nada.";return true}
   const pedir=p.filter(c=>c.k==="nuevo"&&c.stage==="pedir");
   if(pedir.length&&RX_SINCOD.test(t)){pedir.forEach(c=>{c.stage="listo";c.msg=""});bot.text=`Perfecto. ¿Guardo ${pedir.map(c=>c.spec.nombre).join(" y ")}?`;return true}
+  if(asst.ultimo&&asst.ultimo.state==="saved"&&RX_DESHACER.test(t)){const ok=await deshacer(asst.ultimo,true);bot.text=ok?"Listo, lo deshice.":"No pude deshacerlo: alguien cambió ese producto mientras tanto.";return true}
   if(!p.length&&RX_FIN.test(t)){asst.ended=true;bot.text="Con gusto. Aquí estoy cuando me necesites.";return true}
   return false;
 }
@@ -215,7 +219,7 @@ async function sendAsst(text,o={}){
     }
   }catch(e){if(e?.code==="cancelled")bot.text=(e.text||"")+(e.text?"\n":"")+"(Detenido)";else{if(aiHardOff(e))aiState="off";bot.text=(e?.text?e.text+"\n\n":"")+aiMsg(e)}}
   bot.pending=false;asst.busy=false;renderFeed();
-  if(asst.open&&bot.text)await Voz.hablar(bot.text);
+  if(asst.open&&bot.text)await Voz.hablar(bot.text,modoVoz());
   if(asst.open&&asst.lastVoice&&Voz.cfg().continuo&&!asst.ended&&!asst.busy&&!asst.listening)escucharTurno(true);
 }
 async function escucharTurno(auto){
@@ -223,9 +227,9 @@ async function escucharTurno(auto){
   if(!Voz.soportado){estado("Toca el cuadro y usa el micrófono del teclado para dictar.");$("#ain")?.focus();return}
   if(!auto)asst.ended=false;
   const id=++asst.listenId;
-  asst.listening=true;pintarMic();estado("Te escucho… habla ahora");
+  asst.listening=true;asst.parcial="";pintarMic();estado(modoVoz()?"":"Te escucho… habla ahora");
   try{
-    const t=await Voz.escuchar({onParcial:p=>{if(id===asst.listenId){const b=$("#ain");if(b)b.value=p}}});
+    const t=await Voz.escuchar({onParcial:p=>{if(id===asst.listenId){asst.parcial=p;const b=$("#ain");if(b)b.value=p;const d=$("#mldicho");if(d)d.textContent=p||"…"}}});
     if(id!==asst.listenId)return;
     asst.listening=false;pintarMic();
     if(!asst.open)return;
@@ -233,34 +237,95 @@ async function escucharTurno(auto){
     else estado(auto?"Toca el micrófono si quieres seguir.":"No te escuché. Toca el micrófono y vuelve a intentarlo.");
   }catch(e){if(id!==asst.listenId)return;asst.listening=false;pintarMic();estado(auto?"Toca el micrófono para seguir.":Voz.mensajeError(e))}
 }
-function pintarMic(){const b=$("#amic");if(!b)return;b.classList.toggle("on",asst.listening);b.setAttribute("aria-label",asst.listening?"Terminar de hablar":"Hablar");b.innerHTML=asst.listening?icon("close"):icon("mic")}
+function pintarMic(){if($("#mlstage")){renderStage();return}const b=$("#amic");if(!b)return;b.classList.toggle("on",asst.listening);b.setAttribute("aria-label",asst.listening?"Terminar de hablar":"Hablar");b.innerHTML=asst.listening?icon("close"):icon("mic")}
 function estado(t){const e=$("#astatus");if(e)e.textContent=t}
-function updBubble(bot){const el=document.getElementById("b-"+bot.id);if(el){el.textContent=bot.text||"Revisando tu inventario…";const f=$("#afeed");if(f)f.scrollTop=f.scrollHeight}}
+function updBubble(bot){const el=document.getElementById("b-"+bot.id);if(el){el.textContent=bot.text||(modoVoz()?"Déjame revisar…":"Revisando tu inventario…");const f=$("#afeed");if(f)f.scrollTop=f.scrollHeight}}
 function openAsst(q,o={}){
   asst.open=true;document.body.classList.add("noscroll");buildAsst();
   if(q)sendAsst(q);
   else if(o.escuchar)escucharTurno(o.escuchar==="auto");
-  else estado(Voz.soportado?"Toca el micrófono y habla.":"Toca el cuadro y usa el micrófono del teclado.");
+  else estado(modoVoz()?"":Voz.soportado?"Toca el micrófono y habla.":"Toca el cuadro y usa el micrófono del teclado.");
 }
-function closeAsst(){asst.listenId++;asst.ctl?.abort();Voz.parar();Voz.callar();asst.listening=false;asst.open=false;$("#asst").innerHTML="";if(!sheetId)document.body.classList.remove("noscroll")}
+function closeAsst(){asst.verTodo=false;asst.listenId++;asst.ctl?.abort();Voz.parar();Voz.callar();asst.listening=false;asst.open=false;$("#asst").innerHTML="";if(!sheetId)document.body.classList.remove("noscroll")}
+function segModo(){const v=modoVoz();return `<span class="ml-seg" role="group" aria-label="Cómo te atiende ${esc(Voz.nombre())}"><button data-amodo="voz" aria-pressed="${v}">Solo voz</button><button data-amodo="texto" aria-pressed="${!v}">Voz y texto</button></span>`}
 function buildAsst(){
-  const c=Voz.cfg();
-  $("#asst").innerHTML=`<div class="sheet-wrap" id="ascrim"><div class="sheet asst" role="dialog" aria-modal="true" aria-labelledby="as-t">
-    <div class="grab" aria-hidden="true"></div>
-    <div class="top"><span class="aitag" id="as-t">${icon("mic")}${esc(Voz.nombre())}</span><span class="row" style="gap:8px;flex-wrap:nowrap;align-items:center"><button class="chip sm" id="atts" aria-pressed="${c.hablar}">${c.hablar?"Voz activada":"Voz apagada"}</button><button class="x" id="ax" aria-label="Cerrar">${icon("close")}</button></span></div>
+  const voz=modoVoz();
+  const top=`<div class="top"><span class="aitag" id="as-t">${icon("mic")}${esc(Voz.nombre())}</span><span class="row" style="gap:8px;flex-wrap:nowrap;align-items:center">${segModo()}<button class="x" id="ax" aria-label="Cerrar">${icon("close")}</button></span></div>`;
+  $("#asst").innerHTML=voz?`<div class="sheet-wrap" id="ascrim"><div class="sheet asst" role="dialog" aria-modal="true" aria-labelledby="as-t">
+    <div class="grab" aria-hidden="true"></div>${top}
+    <div class="ml"><div class="ml-stage" id="mlstage"></div><p class="hint astatus" id="astatus" aria-live="polite"></p>
+      <div class="ml-pie"><button class="linkbtn" id="mlver">${icon("list")}<span id="mlvern">Ver conversación</span></button><button class="ml-tecla" id="mlkey" aria-label="Escribir en lugar de hablar">${icon("edit")}</button></div></div>
+  </div></div>`:`<div class="sheet-wrap" id="ascrim"><div class="sheet asst" role="dialog" aria-modal="true" aria-labelledby="as-t">
+    <div class="grab" aria-hidden="true"></div>${top}
     <div class="feed" id="afeed" aria-live="polite"></div>
     <p class="hint astatus" id="astatus" aria-live="polite"></p>
     <div class="composer">${Voz.soportado?`<button class="micbtn" id="amic" aria-label="Hablar">${icon("mic")}</button>`:""}<textarea id="ain" rows="1" placeholder="${Voz.soportado?"Escribe…":"Escribe o dicta…"}" aria-label="Mensaje para ${esc(Voz.nombre())}">${esc(asst.draft)}</textarea><button class="btn sm aib" id="asend" aria-label="Enviar">${icon("send")}</button></div>
   </div></div>`;
   $("#ax").onclick=closeAsst;
   $("#ascrim").onclick=e=>{if(e.target.id==="ascrim")closeAsst()};
+  $$("[data-amodo]").forEach(b=>b.onclick=()=>{const m=b.dataset.amodo;Voz.guardar({modo:m});asst.verTodo=false;buildAsst();if(m==="texto")setTimeout(()=>{const f=$("#afeed");if(f)f.scrollTop=f.scrollHeight},50)});
+  if(voz){
+    $("#mlver").onclick=()=>{asst.verTodo=true;buildAsst()};
+    $("#mlkey").onclick=()=>{asst.verTodo=true;if(asst.listening){asst.listenId++;asst.listening=false;Voz.parar()}buildAsst();setTimeout(()=>$("#ain")?.focus(),60)};
+    renderStage();return;
+  }
   $("#ain").oninput=e=>asst.draft=e.target.value;
   $("#ain").onfocus=()=>setTimeout(()=>{const f=$("#afeed");if(f)f.scrollTop=f.scrollHeight},300);
   $("#ain").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendAsst(e.target.value)}};
   $("#asend").onclick=()=>{if(asst.busy)asst.ctl?.abort();else sendAsst($("#ain").value)};
   if($("#amic"))$("#amic").onclick=()=>escucharTurno(false);
-  $("#atts").onclick=()=>{if(!Voz.ttsSoportado){toast("Este teléfono no puede leer en voz alta.");return}const v=!Voz.cfg().hablar;Voz.guardar({hablar:v});const b=$("#atts");b.setAttribute("aria-pressed",v);b.textContent=v?"Voz activada":"Voz apagada";if(!v)Voz.callar()};
   renderFeed();
+}
+/* Escenario del modo manos libres: escucha · piensa · responde · confirma · listo */
+const ACC={compra:["plus","Sumar"],uso:["box","Usar"],ajustar:["edit","Corregir"]};
+function orb(clase,ico,label){return `<button class="orb ${clase}" id="amic" aria-label="${label}">${icon(ico)}</button>`}
+function mlCambios(c){
+  return `<div class="ml-card"><span class="aitag" style="color:var(--ink)">${icon("edit")}${c.rows.length>1?`Confirma ${c.rows.length} cambios`:"Confirma"}</span>
+    ${c.rows.map(r=>{const a=ACC[r.accion]||ACC.ajustar;const info=[r.tienda,r.fecha&&r.fecha!==today()?fmtDate(r.fecha):"",r.precio!=null?money(r.precio)+" c/u":""].filter(Boolean).join(" · ");
+      return `<div class="ml-fila"><div class="t"><span class="acc">${icon(a[0])}${a[1]}</span>${info?`<span class="hint">${esc(info)}</span>`:""}</div>
+      <div class="t"><div style="min-width:0"><b class="ml-nom">${esc(r.nombre)}</b>${r.accion!=="ajustar"&&!r.todo?`<br><span class="hint">${esc(rowDesc(r))}</span>`:""}</div><span class="q">${r.base} → ${rowAfter(r)} <small>en casa</small></span></div>
+      ${r.todo?"":`<div class="t"><span class="stepper sm"><button data-cq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><button data-cq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>${c.rows.length>1?`<button class="linkbtn danger" data-crm="${r.key}" data-c="${c.id}">Quitar</button>`:""}</div>`}</div>`}).join("")}
+    ${c.msg?`<div class="notice warn">${icon("alert")}<span>${esc(c.msg)}</span></div>`:""}
+    <div class="row"><button class="btn" data-ccancel="${c.id}" style="flex:1">No</button><button class="btn primary" data-csave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Guardando…":"Sí, guardar"}</button></div></div>`;
+}
+function renderStage(){
+  const S=$("#mlstage");if(!S)return;
+  const fe=asst.feed,pend=pendientes();
+  const lastMe=[...fe].reverse().find(e=>e.k==="me"),lastBot=[...fe].reverse().find(e=>e.k==="bot");
+  const dicho=lastMe?`<p class="ml-dicho peq">“${esc(lastMe.text)}”</p>`:"";
+  const n=fe.filter(e=>e.k==="me"||e.k==="bot").length;const v=$("#mlvern");if(v)v.textContent=n?`Ver conversación (${n})`:"Ver conversación";
+  const U=asst.ultimo;const reciente=U&&(U.state==="saved"||U.state==="undone")&&lastMe&&U.trasMe===lastMe.id;
+  let h;
+  if(pend.length){
+    // La tarjeta se queda a la vista mientras escucha el "sí" o el "no"
+    const pedir=pend.some(c=>c.k==="nuevo"&&c.stage==="pedir");
+    h=`<div class="ml-stage-top">${dicho}${pend.map(c=>c.k==="cambios"?mlCambios(c):cardHTML(c)).join("")}</div>
+      ${asst.listening?orb("sm","mic","Terminar de hablar"):orb("sm quieto","mic","Hablar")}
+      <span class="ml-estado">${asst.listening?(pedir?"Te escucho… di “no tiene código” o usa los botones":"Te escucho… di “sí” o “no”"):(pedir?"Escanea, toma una foto o di “no tiene código”":"Toca el círculo y di “sí” o “no”")}</span>
+      ${asst.listening?`<p class="ml-dicho peq" id="mldicho">${esc(asst.parcial)}</p>`:""}`;
+  }else if(asst.listening){
+    h=`${orb("","mic","Terminar de hablar")}<span class="ml-estado">Te escucho…</span><p class="ml-dicho" id="mldicho">${esc(asst.parcial)||"…"}</p>${reciente&&U.state==="saved"&&U.puedeDeshacer
+      ?`<p class="ml-nota">${icon("check")}Listo, guardado. ¿Algo más?</p><button class="btn sm" id="mlundo">${icon("back")}Deshacer</button>`
+      :`<p class="ml-nota">Habla normal. Cuando te calles, ${esc(Voz.nombre())} entiende y responde.</p>`}`;
+  }else if(asst.busy){
+    h=`${dicho}<div class="orb habla sm piensa" aria-hidden="true">${icon("spark")}</div><p class="ml-resp" id="b-${lastBot?.id}">${esc(lastBot?.text||"")||"Déjame revisar…"}</p>
+      <button class="btn sm" id="mlstop">${icon("close")}Detener</button>`;
+  }else if(reciente){
+    h=U.state==="saved"?`<div class="orb ok" aria-hidden="true">${icon("check")}</div><p class="ml-resp">Listo, guardado</p>${(U.result||[]).map(t=>`<p class="ml-dicho peq">${esc(t)}.</p>`).join("")}
+      ${U.puedeDeshacer?`<button class="btn sm" id="mlundo">${icon("back")}Deshacer</button>`:""}${orb("sm quieto","mic","Hablar")}<p class="ml-nota">¿Algo más? Di “gracias” para terminar.</p>`
+      :`<div class="orb sm" aria-hidden="true">${icon("back")}</div><p class="ml-resp">Lo deshice</p><p class="ml-dicho peq">Tu inventario quedó como antes.</p>${orb("sm quieto","mic","Hablar")}`;
+  }else if(lastBot&&lastBot.text){
+    h=`${dicho}${orb("habla sm quieto","mic","Hablar")}<p class="ml-resp" id="b-${lastBot.id}">${esc(lastBot.text)}</p><p class="ml-nota">${icon("mic")}Toca el círculo para seguir hablando</p>`;
+  }else{
+    h=`${orb("quieto","mic","Hablar")}<p class="ml-resp">Hola, soy ${esc(Voz.nombre())}</p><p class="ml-dicho peq">Toca el círculo y dime qué compraste, qué usaste o pregúntame cuánto queda.</p>
+      <div class="chips" style="justify-content:center">${["¿Cuánta leche queda?","¿Qué me falta comprar?","¿Qué vence pronto?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
+  }
+  S.innerHTML=h;
+  // Un toque = una acción: se ignora un segundo toque en menos de medio segundo (toques dobles o "fantasma")
+  if($("#amic"))$("#amic").onclick=()=>{const t=Date.now();if(t-(asst.tOrb||0)<600)return;asst.tOrb=t;escucharTurno(false)};
+  if($("#mlstop"))$("#mlstop").onclick=()=>asst.ctl?.abort();
+  if($("#mlundo"))$("#mlundo").onclick=async()=>{const ok=await deshacer(asst.ultimo);if(ok)Voz.hablar("Listo, lo deshice.",true);else toast("No se pudo deshacer: alguien cambió ese producto.")};
+  bindFeed();
 }
 function actualizarNombreAsistente(){
   const f=$("#fab");if(f){f.setAttribute("aria-label","Hablar con "+Voz.nombre());const s=$("#fabname");if(s)s.textContent=Voz.cfg().nombre||"Asistente"}
@@ -305,6 +370,7 @@ function cardHTML(c){
     <div class="row"><button class="btn sm" data-ccancel="${c.id}" style="flex:1">Cancelar</button><button class="btn sm primary" data-nsave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Guardando…":"Guardar"}</button></div></div>`;
 }
 function renderFeed(){
+  if($("#mlstage")){renderStage();return}
   const f=$("#afeed");if(!f)return;
   if(!asst.feed.length){
     f.innerHTML=`<div class="msg bot">Hola, soy ${esc(Voz.nombre())}. Toca el micrófono y pregúntame cuánto hay de algo, dime qué compraste o usaste, o pregúntame qué falta y qué vence. Todo lo reviso en tu inventario antes de responder.</div>
@@ -319,7 +385,7 @@ function bindFeed(){
   $$("[data-cq]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);const r=c&&c.rows.find(x=>x.key===b.dataset.r);if(!r)return;r.n=Math.max(r.accion==="ajustar"?0:1,r.n+(+b.dataset.cq));renderFeed()});
   $$("[data-crm]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);if(!c)return;c.rows=c.rows.filter(x=>x.key!==b.dataset.crm);if(!c.rows.length)c.state="cancelled";renderFeed()});
   $$("[data-ccancel]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.ccancel);if(c){c.state="cancelled";asst.feed.push({k:"note",text:"La persona canceló una propuesta."});renderFeed()}});
-  $$("[data-csave]").forEach(b=>b.onclick=()=>saveCambios(cardById(b.dataset.csave)));
+  $$("[data-csave]").forEach(b=>b.onclick=async()=>{const c=cardById(b.dataset.csave);await saveCambios(c);trasGuardarPorToque(c)});
   $$("[data-ncode]").forEach(i=>i.onchange=e=>newByCode(cardById(i.dataset.ncode),e.target.files[0]));
   $$("[data-nphoto]").forEach(i=>i.onchange=e=>newByPhoto(cardById(i.dataset.nphoto),e.target.files[0]));
   $$("[data-nnone]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.nnone);if(c){c.stage="listo";c.msg="";renderFeed()}});
@@ -327,7 +393,7 @@ function bindFeed(){
   $$("[data-ns]").forEach(s=>s.onchange=e=>{const c=cardById(s.dataset.c);if(!c)return;c.spec[s.dataset.ns]=e.target.value;if(s.dataset.ns==="categoria"){c.spec.ubicacion=UBI_DE[e.target.value]||"Despensa";renderFeed()}});
   $$("[data-nq]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);if(!c)return;c.spec.pq=0;c.spec.cantidad=Math.max(1,c.spec.cantidad+(+b.dataset.nq));renderFeed()});
   $$("[data-npp]").forEach(i=>i.onchange=e=>{const c=cardById(i.dataset.npp);if(!c)return;const S=c.spec;const n=Math.max(1,parseInt(e.target.value.replace(/\D/g,""))||1);S.pp=n;S.empaque=n>1?(S.empaque&&S.empaque!=="Suelto"?S.empaque:"Paquete"):"Suelto";if(S.pq)S.cantidad=S.pq*n;renderFeed()});
-  $$("[data-nsave]").forEach(b=>b.onclick=()=>saveNew(cardById(b.dataset.nsave)));
+  $$("[data-nsave]").forEach(b=>b.onclick=async()=>{const c=cardById(b.dataset.nsave);await saveNew(c);trasGuardarPorToque(c)});
 }
 async function saveCambios(c){
   if(!c||c.busy||!canWrite){if(!canWrite)toast("No tienes permiso para cambiar este inventario.");return}
@@ -348,6 +414,7 @@ async function saveCambios(c){
   try{
     await Promise.all(Object.values(work).map(saveP));
     c.state="saved";c.result=Object.values(work).map(p=>`${p.nombre}: ahora ${p.cantidad} en casa`);
+    c.antes=Object.keys(work).map(id=>fresh[id]);c.despues=Object.values(work).map(p=>({id:p.id,cantidad:p.cantidad}));c.puedeDeshacer=true;marcarUltimo(c);
     asst.feed.push({k:"note",text:"La persona confirmó y se guardó: "+c.result.join("; ")});toast("Guardado en el inventario");
   }catch(e){writeErr(e)}
   c.busy=false;renderFeed();
@@ -392,6 +459,21 @@ async function saveNew(c){
   let p=newProduct({...S,nombre:S.nombre.trim()});learnAlias(p,S.dicho);
   setPack(p,{code:S.codigo,pp:S.pp||1,empaque:S.empaque,unidad:S.unidad,principal:true});
   p=applyPurchase(p,{n:S.cantidad,f:S.fecha,precio:S.precio,tienda:S.tienda,vence:S.vence,pq:S.pq,pp:S.pp||1});
-  try{await saveP(p);c.state="saved";asst.feed.push({k:"note",text:`Se guardó el producto nuevo ${p.nombre} con ${p.cantidad} en casa.`});toast(`${p.nombre} se agregó al inventario`)}catch(e){writeErr(e)}
+  try{await saveP(p);c.state="saved";c.result=[`${p.nombre}: ahora ${p.cantidad} en casa`];c.nuevoId=p.id;c.despues=[{id:p.id,cantidad:p.cantidad}];c.puedeDeshacer=true;marcarUltimo(c);asst.feed.push({k:"note",text:`Se guardó el producto nuevo ${p.nombre} con ${p.cantidad} en casa.`});toast(`${p.nombre} se agregó al inventario`)}catch(e){writeErr(e)}
   c.busy=false;renderFeed();
+}
+
+/* ---- Último guardado y Deshacer (1.5) ---- */
+function marcarUltimo(c){const m=[...asst.feed].reverse().find(e=>e.k==="me");c.trasMe=m?m.id:null;asst.ultimo=c}
+function trasGuardarPorToque(c){if(!c||c.state!=="saved"||!asst.open||!modoVoz())return;Voz.hablar("Listo, guardado.",true).then(()=>{if(asst.open&&Voz.cfg().continuo&&!asst.busy&&!asst.listening&&!pendientes().length)escucharTurno(true)})}
+async function deshacer(c,porVoz){
+  if(!c||c.state!=="saved"||!c.puedeDeshacer||!canWrite)return false;
+  // Solo si nadie cambió esos productos después de guardar
+  for(const d of c.despues||[]){const f=await freshOne(d.id);if(!f||f.cantidad!==d.cantidad)return false}
+  try{
+    if(c.nuevoId)await store.del("productos",c.nuevoId);
+    else await Promise.all((c.antes||[]).map(p=>saveP(p)));
+    c.state="undone";c.puedeDeshacer=false;asst.feed.push({k:"note",text:"La persona deshizo el último cambio; el inventario volvió a como estaba."});
+    if(!porVoz)toast("Cambio deshecho");renderFeed();return true;
+  }catch(e){writeErr(e);return false}
 }
