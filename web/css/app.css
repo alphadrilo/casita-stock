@@ -381,3 +381,36 @@ input[type=date]{min-height:48px}
 .orb.quieto::before,.orb.quieto::after{animation:none;opacity:.55}
 /* Pantallas bajas (iPhone SE): la tarjeta y "Sí, guardar" caben sin desplazar */
 @media (max-height:640px){.ml{gap:8px}.ml-stage-top>.ml-dicho{display:none}.ml-stage .orb.sm{width:52px;height:52px}.ml-stage .orb.sm svg{width:24px;height:24px}.ml-card{padding:12px 14px}.ml-estado{font-size:.72rem}.ml-card>.aitag{display:none}.ml-card{gap:8px}.ml-fila{gap:6px}.ml-card .row .btn{min-height:48px}.ml-fila .t .hint{font-size:.78rem}}
+/* Personaje de Lilu (mujer u hombre según la voz): es el botón para hablar */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.av-wrap{display:flex;flex-direction:column;align-items:center;gap:30px}
+.orb.av{width:116px;height:116px;padding:0;background:radial-gradient(circle at 50% 38%,var(--surface) 0 30%,var(--ai-soft) 72%);box-shadow:0 0 0 3px color-mix(in srgb,var(--ai) 55%,transparent),0 8px 22px rgb(40 30 90/.18);transition:box-shadow .35s ease,transform .35s ease}
+.orb.av .av-img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:50% 8%;display:block;pointer-events:none}
+.orb.av::before,.orb.av::after{border-color:color-mix(in srgb,var(--ai) 30%,transparent);animation:none;opacity:0}
+.orb.av.sm{width:76px;height:76px}
+.av-est{font:800 .82rem var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--ai);min-height:1.2em;text-align:center}
+.orb.av:focus-visible{outline:3px solid var(--ai);outline-offset:6px}
+/* Escuchando: halo luminoso que respira */
+.orb.av.oye{box-shadow:0 0 0 4px var(--ai),0 0 28px 8px color-mix(in srgb,var(--ai) 45%,transparent)}
+.orb.av.oye::before,.orb.av.oye::after{opacity:1}
+/* Hablando: ondas suaves de color amarillo Casita */
+.orb.av.voz{box-shadow:0 0 0 4px var(--p-now),0 0 22px 6px color-mix(in srgb,var(--p-now) 45%,transparent)}
+.orb.av.voz::before,.orb.av.voz::after{opacity:1;border-color:color-mix(in srgb,var(--p-now) 55%,transparent)}
+@media (prefers-reduced-motion:no-preference){
+  .orb.av.oye{animation:respira 1.6s ease-in-out infinite}@keyframes respira{50%{box-shadow:0 0 0 4px var(--ai),0 0 40px 14px color-mix(in srgb,var(--ai) 55%,transparent)}}
+  .orb.av.oye::before{animation:onda 1.6s ease-out infinite}.orb.av.oye::after{animation:onda 1.6s .5s ease-out infinite}
+  .orb.av.voz::before{animation:onda 1s ease-out infinite}.orb.av.voz::after{animation:onda 1s .33s ease-out infinite}
+  .orb.av.voz .av-img{animation:asiente 1.2s ease-in-out infinite}@keyframes asiente{50%{transform:translateY(-2px) scale(1.02)}}
+}
+/* Botón flotante: la carita del personaje */
+.fab.av-fab{width:68px;min-width:0;height:68px;padding:0;border-radius:50%;background:radial-gradient(circle at 50% 38%,var(--surface) 0 30%,var(--ai-soft) 72%);border:3px solid var(--ai);overflow:hidden;justify-content:center}
+.fab.av-fab .av-img{width:100%;height:100%;object-fit:cover;object-position:50% 8%;pointer-events:none}
+.fab.av-fab:focus-visible{outline:3px solid var(--ai);outline-offset:4px}
+@media (max-width:360px){.orb.av{width:104px;height:104px}}
+@media (max-height:640px){.ml-stage .orb.av.sm{width:60px;height:60px}.av-wrap{gap:22px}}
+/* Ajustes: elegir personaje */
+.av-opc{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.av-opc button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;border-radius:16px;border:2px solid var(--line);background:var(--surface);color:var(--ink);font:700 .95rem var(--body);cursor:pointer;min-height:44px}
+.av-opc button[aria-checked="true"]{border-color:var(--ai);background:var(--ai-soft)}
+.av-opc .av-img{width:64px;height:64px;border-radius:50%;object-fit:cover;object-position:50% 8%;background:var(--ai-soft)}
+.ml-stage .ml-dicho + .av-wrap{margin-top:16px}
