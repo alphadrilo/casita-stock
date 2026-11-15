@@ -174,7 +174,7 @@
       (oyentes[col] || []).forEach((fn) => { try { fn({ docs, size: docs.length, empty: !docs.length, docChanges: () => [], metadata: { fromCache: false, hasPendingWrites: false } }); } catch (e) { console.error(e); } });
       Object.entries(docOyentes).forEach(([k, fns]) => { const [c, id] = k.split("/"); if (c === col) fns.forEach((fn) => { try { fn(snapDoc(id, m.get(id))); } catch (e) { console.error(e); } }); });
     };
-    const errDb = (e) => ({ code: e && e.code === "42501" ? "invalid_argument" : /fetch|network|Failed/i.test(String(e && e.message)) ? "unavailable" : "invalid_argument", message: String((e && e.message) || e) });
+    const errDb = (e) => ({ code: e && e.code === "23514" ? "check_violation" : e && e.code === "42501" ? "invalid_argument" : /fetch|network|Failed/i.test(String(e && e.message)) ? "unavailable" : "invalid_argument", message: String((e && e.message) || e) });
     async function cargar(col) {
       const { data, error } = await sb.from("documentos").select("id,data").eq("hogar_id", hid).eq("coleccion", col);
       if (error) throw error;
@@ -422,7 +422,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.5${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.5.1${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {

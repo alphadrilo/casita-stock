@@ -31,6 +31,17 @@ function guardarCompra(id, data) {
   if (!data.items || !data.items.length) return Promise.resolve();
   return store.set("compras", id, { ...data, creado: Date.now(), u: me || "" });
 }
+/* Igual que guardarCompra, pero nunca falla: devuelve "" si se guardó o el aviso para la persona.
+   Se usa después de guardar el inventario, para no dejar a nadie atrapado en la pantalla. */
+async function guardarCompraSeguro(id, data) {
+  try { await guardarCompra(id, data); return ""; }
+  catch (e) {
+    console.error("[Casita Stock] No se guardó el historial de compras:", e && e.message);
+    return e && e.code === "check_violation"
+      ? "Tu inventario ya quedó guardado. El historial de compras no se guardó porque falta actualizar la base de datos en Supabase (guía de instalación, paso 1)."
+      : "Tu inventario ya quedó guardado, pero esta compra no se guardó en el historial (revisa tu conexión).";
+  }
+}
 
 function abrirFactura(from) {
   fac = { pages: [], state: "idle", err: "", from: from || "add", ctl: null };
@@ -334,7 +345,16 @@ function facBarra() {
 }
 
 /* ---------------- Guardar: inventario + historial ---------------- */
+// Si algo inesperado falla, el botón vuelve a funcionar y se avisa (nunca queda en "Guardando…")
 async function saveFac() {
+  try { await saveFacPasos(); }
+  catch (e) {
+    console.error("[Casita Stock] Error al guardar la factura:", e);
+    saving = false; if (facRev) facRev.msg = "No se pudo terminar de guardar. Toca Guardar otra vez: lo que ya se guardó no se repite.";
+    render();
+  }
+}
+async function saveFacPasos() {
   const R = facRev;
   if (saving || !R || !R.rows.length || facPendientes() || (R.dup && !R.dupOk)) return;
   saving = true; R.msg = ""; facBarra();
@@ -384,12 +404,11 @@ async function saveFac() {
     saving = false; R.msg = "No se pudo guardar todo. Revisa tu conexión y toca Guardar otra vez: lo que ya se guardó no se repite.";
     writeErr(fallo.reason); render(); return;
   }
-  try {
-    await guardarCompra(cid, { fecha: f, tienda, origen: "factura", items, paginas: R.paginas, subtotal: R.subtotal, impuestos: R.impuestos, descuentos: R.descuentos,
-      total: R.total != null ? R.total : facR2(suma) });
-  } catch (e) { saving = false; R.msg = "Los productos ya se sumaron, pero no se pudo guardar el historial. Toca Guardar otra vez."; writeErr(e); render(); return; }
+  // El inventario ya quedó guardado: la pantalla termina aunque el historial falle (y lo avisa)
+  const avisoHist = await guardarCompraSeguro(cid, { fecha: f, tienda, origen: "factura", items, paginas: R.paginas, subtotal: R.subtotal, impuestos: R.impuestos, descuentos: R.descuentos,
+    total: R.total != null ? R.total : facR2(suma) });
   saving = false;
-  done = { count, total: R.total != null ? R.total : facR2(suma) || null, origen: "factura", compraId: cid, nuevos };
+  done = { count, total: R.total != null ? R.total : facR2(suma) || null, origen: "factura", compraId: avisoHist ? null : cid, nuevos, avisoHist };
   facRev = null; fac = { pages: [], state: "idle", err: "", from: fac.from, ctl: null };
   screen = "hecho"; render(); scrollTo(0, 0);
 }

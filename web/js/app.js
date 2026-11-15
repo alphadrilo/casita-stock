@@ -105,7 +105,7 @@ const store={
   async saveAnalysis(a){analysis=a;if(mode==="db"){try{await db.doc("ajustes/analisis").set(JSON.parse(JSON.stringify(a)))}catch(e){}}else LS.set(K.a,a)}
 };
 const saveP=p=>store.set("productos",p.id,p);
-const writeErr=e=>{if(e&&e.code==="invalid_argument"){canWrite=false;toast("No tienes permiso para cambiar este inventario.");render()}else if(e&&e.code==="quota_exceeded")toast("El inventario está lleno. Borra productos que ya no uses.");else toast("No se pudo guardar. Revisa tu conexión e inténtalo otra vez.")};
+const writeErr=e=>{if(e&&e.code==="check_violation")toast("Falta actualizar la base de datos en Supabase (guía, paso 1).");else if(e&&e.code==="invalid_argument"){canWrite=false;toast("No tienes permiso para cambiar este inventario.");render()}else if(e&&e.code==="quota_exceeded")toast("El inventario está lleno. Borra productos que ya no uses.");else toast("No se pudo guardar. Revisa tu conexión e inténtalo otra vez.")};
 
 (async()=>{await 0;
   try{db=window.claude?await window.claude.use("db"):null}catch(e){db=null}
@@ -250,8 +250,14 @@ function header(){
     const s=STEPS[step];let help=s.help;
     if(step===2&&draft.origen==="inventario")help="Ya tienes este producto. Solo dime cuántos compraste.";
     p.hidden=false;
-    p.innerHTML=`<span class="count">Paso ${step+1} de 5</span><h2>${s.q}</h2><p class="help">${help}</p>
-      <ol class="dots" aria-hidden="true">${STEPS.map((x,i)=>`<li class="${i<step?"done":i===step?"now":""}">${x.name}</li>`).join("")}</ol>`;
+    // Barra de pasos (1.4): ícono por paso, ✓ en los terminados, pastilla con el nombre en el activo y barra que se llena
+    const PI=["scan","edit","layers","clock","box"],n=STEPS.length,pct=Math.round(step/(n-1)*100);
+    p.innerHTML=`<div class="pasos-wrap" style="--pct:${pct}%">
+        <ol class="pasos" aria-label="Paso ${step+1} de ${n}: ${s.name}">${STEPS.map((x,i)=>`<li class="${i<step?"done":i===step?"now":""}" ${i===step?'aria-current="step"':""}><span class="pc" aria-hidden="true">${icon(i<step?"check":PI[i])}</span><span class="pl">${x.name}</span></li>`).join("")}</ol>
+        <div class="pbar" aria-hidden="true"><i></i></div>
+        <p class="pnext"><b>Paso ${step+1} de ${n} · ${s.name}</b><span>${step<n-1?`Sigue: ${STEPS[step+1].name}`:"¡Último paso!"}</span></p>
+      </div>
+      <h2>${s.q}</h2><p class="help">${help}</p>`;
     return;
   }
   const H={inv:["","Lo que hay en casa","Toca la foto de un producto para ver su ficha y la descripción de la IA."],
@@ -579,15 +585,17 @@ async function saveReview(){
     items.push({productoId:base.id,nombre:base.nombre,cantidad:r.cantidad,unidades:r.cantidad*pp,precioUnitario:precioPaq,total:precioPaq!=null?Math.round(precioPaq*r.cantidad*100)/100:null});
     if(r.listaId)writes.push(store.del("lista",r.listaId));
   }
-  writes.push(guardarCompra(cid,{fecha:f,tienda,origen:review.origen,items,total:total?Math.round(total*100)/100:null}));
-  try{await Promise.all(writes);done={count,total:total||null,origen:review.origen,compraId:cid};screen="hecho";review=null;if(screenTab==="add")lote={rows:[],msg:{t:"",err:false}}}
-  catch(e){writeErr(e)}
+  try{await Promise.all(writes)}catch(e){writeErr(e);saving=false;render();return}
+  // El inventario ya quedó guardado: si el historial falla, se avisa pero la pantalla termina (si no, un segundo "Guardar" sumaría todo otra vez)
+  const avisoHist=await guardarCompraSeguro(cid,{fecha:f,tienda,origen:review.origen,items,total:total?Math.round(total*100)/100:null});
+  done={count,total:total||null,origen:review.origen,compraId:avisoHist?null:cid,avisoHist};screen="hecho";review=null;if(screenTab==="add")lote={rows:[],msg:{t:"",err:false}}
   saving=false;render();scrollTo(0,0);
 }
 function renderDone(v,bar){
   v.innerHTML=`<section class="card done-card" aria-live="polite"><div class="ring">${icon("check")}</div><h2>¡Compra guardada!</h2>
     <p class="summary-line">Sumaste <b>${plural(done.count,"producto")}</b> a tu inventario${done.total?` por <b>${money(done.total)}</b>`:""}.</p>
     ${done.nuevos?`<p class="hint" style="margin:0">${plural(done.nuevos,"producto nuevo","productos nuevos")} en tu inventario.</p>`:""}
+    ${done.avisoHist?`<div class="notice warn" style="text-align:left">${icon("alert")}<span>${esc(done.avisoHist)}</span></div>`:""}
     ${done.compraId?`<button class="btn sm" id="dhist">${icon("list")}Ver en el historial de compras</button>`:""}</section>`;
   bar.innerHTML=`<button class="btn" id="dinv">${icon("box")}Ver inventario</button><button class="btn primary" id="dok">${icon("check")}Listo</button>`;
   if($("#dhist"))$("#dhist").onclick=()=>{screen="hist";render();scrollTo(0,0)};
