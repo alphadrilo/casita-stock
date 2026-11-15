@@ -278,7 +278,21 @@ function buildAsst(){
 }
 /* Escenario del modo manos libres: escucha · piensa · responde · confirma · listo */
 const ACC={compra:["plus","Sumar"],uso:["box","Usar"],ajustar:["edit","Corregir"]};
-function orb(clase,ico,label){return `<button class="orb ${clase}" id="amic" aria-label="${label}">${icon(ico)}</button>`}
+/* Personaje animado (mujer u hombre, según la voz elegida). Es el botón para hablar: tocarlo escucha; tocarlo otra vez se detiene. */
+function avImg(g){g=g||Voz.personaje();return `<img class="av-img" data-av src="${Voz.imagen(g)}" alt="" width="420" height="415" draggable="false" decoding="async">`}
+function estadoAv(){return asst.listening?"Escuchando…":Voz.hablando?`${esc(Voz.nombre())} está hablando`:"Toca para hablar"}
+function orb(clase,ico,label){
+  const lbl=asst.listening?"Terminar de hablar":`Hablar con ${esc(Voz.nombre())}`;
+  return `<div class="av-wrap"><button class="orb av ${clase.replace("habla","")}${asst.listening?" oye":""}${Voz.hablando?" voz":""}" id="amic" aria-label="${lbl}" aria-describedby="avest">${avImg()}</button><span class="av-est" id="avest">${estadoAv()}</span></div>`}
+// El personaje cambia y se anima sin volver a dibujar la pantalla
+function pintarAv(){
+  const g=Voz.personaje();
+  document.querySelectorAll("img[data-av]").forEach(i=>{const src=Voz.imagen(g);if(!i.src.endsWith(src))i.src=src});
+  const b=$("#amic");if(b&&b.classList.contains("av")){b.classList.toggle("voz",Voz.hablando&&!asst.listening);b.classList.toggle("oye",!!asst.listening)}
+  const e=$("#avest");if(e)e.textContent=estadoAv().replace(/&amp;/g,"&");
+}
+window.addEventListener("cs-habla",pintarAv);
+window.addEventListener("cs-personaje",pintarAv);
 function mlCambios(c){
   return `<div class="ml-card"><span class="aitag" style="color:var(--ink)">${icon("edit")}${c.rows.length>1?`Confirma ${c.rows.length} cambios`:"Confirma"}</span>
     ${c.rows.map(r=>{const a=ACC[r.accion]||ACC.ajustar;const info=[r.tienda,r.fecha&&r.fecha!==today()?fmtDate(r.fecha):"",r.precio!=null?money(r.precio)+" c/u":""].filter(Boolean).join(" · ");
@@ -301,23 +315,23 @@ function renderStage(){
     const pedir=pend.some(c=>c.k==="nuevo"&&c.stage==="pedir");
     h=`<div class="ml-stage-top">${dicho}${pend.map(c=>c.k==="cambios"?mlCambios(c):cardHTML(c)).join("")}</div>
       ${asst.listening?orb("sm","mic","Terminar de hablar"):orb("sm quieto","mic","Hablar")}
-      <span class="ml-estado">${asst.listening?(pedir?"Te escucho… di “no tiene código” o usa los botones":"Te escucho… di “sí” o “no”"):(pedir?"Escanea, toma una foto o di “no tiene código”":"Toca el círculo y di “sí” o “no”")}</span>
+      <span class="ml-estado">${asst.listening?(pedir?"Di “no tiene código” o usa los botones":"Di “sí” o “no”"):(pedir?"Escanea, toma una foto o di “no tiene código”":"Tócame y di “sí” o “no”, o usa los botones")}</span>
       ${asst.listening?`<p class="ml-dicho peq" id="mldicho">${esc(asst.parcial)}</p>`:""}`;
   }else if(asst.listening){
-    h=`${orb("","mic","Terminar de hablar")}<span class="ml-estado">Te escucho…</span><p class="ml-dicho" id="mldicho">${esc(asst.parcial)||"…"}</p>${reciente&&U.state==="saved"&&U.puedeDeshacer
+    h=`${orb("","mic","Terminar de hablar")}<p class="ml-dicho" id="mldicho">${esc(asst.parcial)||"…"}</p>${reciente&&U.state==="saved"&&U.puedeDeshacer
       ?`<p class="ml-nota">${icon("check")}Listo, guardado. ¿Algo más?</p><button class="btn sm" id="mlundo">${icon("back")}Deshacer</button>`
       :`<p class="ml-nota">Habla normal. Cuando te calles, ${esc(Voz.nombre())} entiende y responde.</p>`}`;
   }else if(asst.busy){
-    h=`${dicho}<div class="orb habla sm piensa" aria-hidden="true">${icon("spark")}</div><p class="ml-resp" id="b-${lastBot?.id}">${esc(lastBot?.text||"")||"Déjame revisar…"}</p>
+    h=`${dicho}<div class="av-wrap"><div class="orb av sm piensa" aria-hidden="true">${avImg()}</div><span class="av-est">Pensando…</span></div><p class="ml-resp" id="b-${lastBot?.id}">${esc(lastBot?.text||"")||"Déjame revisar…"}</p>
       <button class="btn sm" id="mlstop">${icon("close")}Detener</button>`;
   }else if(reciente){
     h=U.state==="saved"?`<div class="orb ok" aria-hidden="true">${icon("check")}</div><p class="ml-resp">Listo, guardado</p>${(U.result||[]).map(t=>`<p class="ml-dicho peq">${esc(t)}.</p>`).join("")}
       ${U.puedeDeshacer?`<button class="btn sm" id="mlundo">${icon("back")}Deshacer</button>`:""}${orb("sm quieto","mic","Hablar")}<p class="ml-nota">¿Algo más? Di “gracias” para terminar.</p>`
       :`<div class="orb sm" aria-hidden="true">${icon("back")}</div><p class="ml-resp">Lo deshice</p><p class="ml-dicho peq">Tu inventario quedó como antes.</p>${orb("sm quieto","mic","Hablar")}`;
   }else if(lastBot&&lastBot.text){
-    h=`${dicho}${orb("habla sm quieto","mic","Hablar")}<p class="ml-resp" id="b-${lastBot.id}">${esc(lastBot.text)}</p><p class="ml-nota">${icon("mic")}Toca el círculo para seguir hablando</p>`;
+    h=`${dicho}${orb("quieto","mic","Hablar")}<p class="ml-resp" id="b-${lastBot.id}">${esc(lastBot.text)}</p>`;
   }else{
-    h=`${orb("quieto","mic","Hablar")}<p class="ml-resp">Hola, soy ${esc(Voz.nombre())}</p><p class="ml-dicho peq">Toca el círculo y dime qué compraste, qué usaste o pregúntame cuánto queda.</p>
+    h=`${orb("quieto","mic","Hablar")}<p class="ml-resp">Hola, soy ${esc(Voz.nombre())}</p><p class="ml-dicho peq">Tócame y dime qué compraste, qué usaste o pregúntame cuánto queda.</p>
       <div class="chips" style="justify-content:center">${["¿Cuánta leche queda?","¿Qué me falta comprar?","¿Qué vence pronto?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
   }
   S.innerHTML=h;
@@ -328,7 +342,7 @@ function renderStage(){
   bindFeed();
 }
 function actualizarNombreAsistente(){
-  const f=$("#fab");if(f){f.setAttribute("aria-label","Hablar con "+Voz.nombre());const s=$("#fabname");if(s)s.textContent=Voz.cfg().nombre||"Asistente"}
+  const f=$("#fab");if(f){f.setAttribute("aria-label","Hablar con "+Voz.nombre());const s=$("#fabname");if(s)s.textContent=Voz.cfg().nombre||"Asistente";pintarAv()}
   if(typeof render==="function"&&loaded)render();
 }
 window.actualizarNombreAsistente=actualizarNombreAsistente;

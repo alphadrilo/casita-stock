@@ -404,6 +404,8 @@
       <div class="top"><h2 id="a-t">Ajustes</h2><button class="x" id="a-x" aria-label="Cerrar">${ico("close")}</button></div>
       <section class="card ai"><span class="aitag">${ico("mic")}Tu asistente</span>
         <div class="field"><label for="a-an">Nombre</label><input type="text" id="a-an" maxlength="20" value="${esc(c.nombre)}"></div>
+        <div class="field"><span class="lbl" id="a-pl">Personaje y tipo de voz</span>
+          <div class="av-opc" role="radiogroup" aria-labelledby="a-pl">${[["mujer", "Mujer"], ["hombre", "Hombre"]].map(([g, l]) => `<button type="button" role="radio" data-apj="${g}" aria-checked="${Voz.personaje() === g}"><img class="av-img" src="${Voz.imagen(g)}" alt="" width="420" height="415">${l}</button>`).join("")}</div></div>
         <div class="field"><label for="a-av">Voz</label><select id="a-av">${opcionesVoz(c.voz)}</select><button class="linkbtn ai" id="a-try">Escuchar cómo suena</button></div>
         <div class="field"><label for="a-id">Idioma para escucharte</label><select id="a-id">${[["es-US", "Español (Estados Unidos)"], ["es-MX", "Español (México)"], ["es-CO", "Español (Colombia)"], ["es-ES", "Español (España)"]].map(([v, l]) => `<option value="${v}" ${v === c.idioma ? "selected" : ""}>${l}</option>`).join("")}</select></div>
         <div class="field"><span class="lbl">¿Cómo te atiende ${esc(c.nombre || "tu asistente")}?</span>
@@ -422,7 +424,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.5.1${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.6${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
@@ -431,7 +433,9 @@
     $("#a-x").onclick = cerrar; $("#a-scrim").onclick = (e) => { if (e.target.id === "a-scrim") cerrar(); };
     Voz.alCargarVoces(() => { const s = $("#a-av"); if (s) s.innerHTML = opcionesVoz(Voz.cfg().voz); });
     $("#a-an").onchange = (e) => { const n = e.target.value.trim(); if (n) { Voz.guardar({ nombre: n }); window.actualizarNombreAsistente && window.actualizarNombreAsistente(); toastP("Ahora tu asistente se llama " + n); } };
-    $("#a-av").onchange = (e) => Voz.guardar({ voz: e.target.value });
+    const marcarPj = () => document.querySelectorAll("[data-apj]").forEach((b) => b.setAttribute("aria-checked", b.dataset.apj === Voz.personaje()));
+    $("#a-av").onchange = (e) => { Voz.guardar({ voz: e.target.value }); marcarPj(); };
+    document.querySelectorAll("[data-apj]").forEach((b) => { b.onclick = () => { Voz.guardar({ personaje: b.dataset.apj }); marcarPj(); const s = $("#a-av"); if (s && Voz.cfg().voz) s.value = Voz.cfg().voz; }; });
     $("#a-id").onchange = (e) => Voz.guardar({ idioma: e.target.value });
     $("#a-try").onclick = () => Voz.hablar(`Hola, soy ${Voz.nombre()}. ¿En qué te ayudo?`, true);
     const tog = (id, key) => { $(id).onclick = () => { const v = !Voz.cfg()[key]; Voz.guardar({ [key]: v }); $(id).setAttribute("aria-pressed", v); }; };

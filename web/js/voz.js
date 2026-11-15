@@ -6,11 +6,30 @@ window.Voz = (() => {
   const NAT = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition;
   let pararNativo = null;
   const KEY = "cs-asistente";
-  const DEF = { nombre: "", voz: "", idioma: "es-US", hablar: true, continuo: true, modo: "voz" }; // modo: "voz" (manos libres) | "texto" (chat completo)
-  let rec = null, escuchando = false;
+  const DEF = { nombre: "", voz: "", idioma: "es-US", hablar: true, continuo: true, modo: "voz", personaje: "" }; // personaje: "mujer" | "hombre" ("" = según la voz) // modo: "voz" (manos libres) | "texto" (chat completo)
+  let rec = null, escuchando = false, hablando = false, turnoHabla = 0;
 
   function cfg() { try { return { ...DEF, ...(JSON.parse(localStorage.getItem(KEY) || "{}")) }; } catch (e) { return { ...DEF }; } }
-  function guardar(cambios) { const c = { ...cfg(), ...cambios }; try { localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {} return c; }
+  function guardar(cambios) {
+    const antes = personaje();
+    let c = { ...cfg(), ...cambios };
+    // Elegir una voz cambia el personaje si se sabe si es de mujer o de hombre
+    if (cambios.voz !== undefined && !cambios.personaje) { const g = generoVoz(cambios.voz); if (g) c.personaje = g; }
+    // Elegir el personaje busca una voz de ese tipo, si la voz actual no lo es
+    if (cambios.personaje && generoVoz(c.voz) !== cambios.personaje) { const v = voces().find((x) => generoVoz(x.name) === cambios.personaje); if (v) c.voz = v.name; }
+    try { localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {}
+    if (personaje() !== antes) avisar("cs-personaje", personaje());
+    return c;
+  }
+  const avisar = (nombre, detail) => { try { window.dispatchEvent(new CustomEvent(nombre, { detail })); } catch (e) {} };
+
+  /* Voces en español de iPhone, Mac, Android y Windows. El sistema no dice si una voz es de mujer o de hombre,
+     así que se reconoce por su nombre. "" = no se sabe. */
+  const MUJER = /\b(paulina|m[oó]nica|marisol|ang[eé]lica|isabela|francisca|soledad|helena|laura|luc[ií]a|sabina|esperanza|elvira|dalia|paloma|camila|elena|ximena|valentina|catalina|carmen|flo|sandy|shelley|grandma|abuela|female|mujer)\b/i;
+  const HOMBRE = /\b(jorge|juan|diego|carlos|eddy|reed|rocko|grandpa|abuelo|[aá]lvaro|pablo|enrique|jaime|ra[uú]l|alonso|gonzalo|tom[aá]s|jorge|male|hombre)\b/i;
+  function generoVoz(nombre) { const n = String(nombre || ""); return MUJER.test(n) ? "mujer" : HOMBRE.test(n) ? "hombre" : ""; }
+  function personaje() { const c = cfg(); return c.personaje === "hombre" || c.personaje === "mujer" ? c.personaje : generoVoz(c.voz) || "mujer"; }
+  const IMG = { mujer: "img/lilu-mujer.gif", hombre: "img/lilu-hombre.gif" };
 
   const ttsSoportado = "speechSynthesis" in window;
   function voces() {
@@ -39,14 +58,19 @@ window.Voz = (() => {
         u.lang = v ? v.lang : cfg().idioma;
         if (v) u.voice = v;
         u.rate = 1.03;
-        u.onend = u.onerror = () => ok();
+        // Avisa cuando empieza y termina de hablar (para animar al personaje)
+        let listo = false; const turno = ++turnoHabla;
+        const fin = () => { if (listo) return; listo = true; if (hablando && turno === turnoHabla) { hablando = false; avisar("cs-habla", false); } ok(); };
+        u.onstart = () => { if (!listo && !hablando) { hablando = true; avisar("cs-habla", true); } };
+        u.onend = u.onerror = fin;
         speechSynthesis.speak(u);
+        if (!hablando) { hablando = true; avisar("cs-habla", true); }
         // Respaldo: algunos teléfonos no avisan cuando terminan
-        setTimeout(ok, Math.min(30000, 1500 + limpiar(texto).length * 90));
+        setTimeout(fin, Math.min(30000, 1500 + limpiar(texto).length * 90));
       } catch (e) { ok(); }
     });
   }
-  function callar() { try { ttsSoportado && speechSynthesis.cancel(); } catch (e) {} }
+  function callar() { turnoHabla++; try { ttsSoportado && speechSynthesis.cancel(); } catch (e) {} if (hablando) { hablando = false; avisar("cs-habla", false); } }
 
   async function escucharNativo({ onParcial } = {}) {
     const P = NAT;
@@ -124,6 +148,8 @@ window.Voz = (() => {
   return {
     soportado: !!SR || !!NAT, nativo: !!NAT, ttsSoportado, cfg, guardar, voces, alCargarVoces, hablar, callar, escuchar, parar, mensajeError,
     get escuchando() { return escuchando; },
+    get hablando() { return hablando; },
+    personaje, generoVoz, imagen: (g) => IMG[g || personaje()],
     nombre() { return cfg().nombre || "tu asistente"; },
   };
 })();
