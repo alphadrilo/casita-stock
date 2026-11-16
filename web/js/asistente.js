@@ -65,7 +65,11 @@ async function freshAll(){if(mode==="db"){try{const s=await db.collection("produ
 async function freshOne(id){if(mode==="db"){try{const s=await db.collection("productos").doc(id).get();return s.exists?{...s.data(),id}:null}catch(e){}}return inventory.find(x=>x.id===id)||null}
 const compact=p=>{const dl=daysLeft(p);const o={id:p.id,nombre:p.nombre,enCasa:p.cantidad,estado:status(p)[1],avisarCuandoQueden:p.minimo};
   if(p.marca)o.marca=p.marca;if(p.tamano)o.tamano=p.tamano;if(p.vence&&p.cantidad>0)o.vence=p.vence;if(dl!==null)o.diasQueAlcanza=Math.round(dl);
-  if(p.unidad)o.unidad=p.unidad;if(ppOf(p)>1){o.unidadesPorPaquete=ppOf(p);o.vieneEn=packDesc(p,ppOf(p))}if(p.ubicacion)o.dondeSeGuarda=p.ubicacion;if(p.fechaCompra)o.ultimaCompra=p.fechaCompra;if(p.tienda)o.ultimaTienda=p.tienda;if(p.precio!=null)o.ultimoPrecio=p.precio;if(p.alias&&p.alias.length)o.alias=p.alias;return o};
+  if(p.unidad)o.unidad=p.unidad;if(ppOf(p)>1){o.unidadesPorPaquete=ppOf(p);o.vieneEn=packDesc(p,ppOf(p))}if(p.ubicacion)o.dondeSeGuarda=p.ubicacion;if(p.fechaCompra)o.ultimaCompra=p.fechaCompra;if(p.tienda)o.ultimaTienda=p.tienda;if(p.precio!=null)o.ultimoPrecio=p.precio;if(p.alias&&p.alias.length)o.alias=p.alias;
+  if(Consumo.activo(p)){const e=Consumo.estimar(p),r=Consumo.reciente(p);o.consumoInteligente={sinAbrirConfirmado:e.sinAbrir,enUso:e.abierto?1:0,totalEstimado:Math.round(e.unidadesEst*10)/10,unidad:uni(p,1),
+    diasQueAlcanzaEstimado:e.dias==null?"todavía no se sabe":Math.round(e.dias),seAcabariaElDia:e.agota||undefined,cadaUnidadDuraDias:e.est?Math.round(e.est*10)/10:undefined,confianza:e.conf==="baja"?"baja (provisional)":e.conf,cambiosRegistrados:e.n,
+    ultimoRegistroHaceMinutos:r?Math.round(r.hace/60000):undefined}}
+  return o};
 function searchIn(list,texto){
   const k=keyOf(texto);const code=String(texto||"").replace(/\D/g,"");if(!k&&code.length<8)return[];
   const ws=k.split(" ").filter(Boolean);
@@ -76,8 +80,10 @@ function searchIn(list,texto){
 }
 const validDate=(d,past)=>/^\d{4}-\d{2}-\d{2}$/.test(d||"")&&(past?d<=today():d>=today());
 function insertCard(card){const i=asst.feed.findIndex(e=>e.k==="bot"&&e.pending);if(i>=0)asst.feed.splice(i,0,card);else asst.feed.push(card);renderFeed()}
-function rowAfter(r){return r.accion==="compra"?r.base+r.n:r.accion==="uso"?Math.max(0,r.base-(r.todo?r.base:r.n)):r.n}
+function rowAfter(r){return r.accion==="abrir"?Math.max(0,r.base-1):r.accion==="compra"?r.base+r.n:r.accion==="uso"?Math.max(0,r.base-(r.todo?r.base:r.n)):r.n}
 function rowDesc(r){
+  if(r.accion==="abrir"){const p=inventory.find(x=>x.id===r.productoId);const q=p?uni(p,1):"unidad";const e=p&&Consumo.activo(p)&&p.consumo.abierto?(Date.now()-p.consumo.abierto)/Consumo.DIA:null;
+    return `Abriste ${q==="unidad"?"uno nuevo":"otro "+q}${e!=null?` · el anterior duró ${diasTxt(e)}`:""}${r.repetido?` · ya se registró uno hace ${r.repetido} min`:""}`}
   if(r.accion==="uso")return r.todo?"Se acabó":`Usaste ${r.n}`;
   if(r.accion==="ajustar")return `Corregir a ${r.n}`;
   const p=inventory.find(x=>x.id===r.productoId);
@@ -87,16 +93,21 @@ function stageChanges(cambios){
   const rows=[],bad=[];
   for(const c of (Array.isArray(cambios)?cambios:[])){
     const p=inventory.find(x=>x.id===String(c.productoId||""));if(!p){bad.push(String(c.productoId||c.dicho||"?"));continue}
-    const accion=["compra","uso","ajustar"].includes(c.accion)?c.accion:"compra";
+    const accion=["compra","uso","ajustar","abrir"].includes(c.accion)?c.accion:"compra";
     let n=Math.max(0,Math.round(+c.cantidad||0));const todo=accion==="uso"&&!!c.todo;
     const pp=ppOf(p);const pq=accion==="compra"&&+c.paquetes>0?Math.round(+c.paquetes):0;if(pq)n=pq*pp;
     if(c.precio==null&&+c.precioPaquete>0)c.precio=+c.precioPaquete/(pq?pp:1);
     if(accion!=="ajustar"&&n<1&&!todo){if(accion==="compra"){const last=[...(p.historial||[])].reverse().find(h=>h.t==="c");n=last?last.n:1}else n=1}
+    if(accion==="abrir"){
+      // Un cambio = 1 unidad. Si alguien ya registró uno hace poco, se avisa en la tarjeta (puede ser el mismo)
+      const rc=Consumo.reciente(p);if(rows.some(x=>x.productoId===p.id&&x.accion==="abrir"))continue;
+      rows.push({key:uid(),productoId:p.id,nombre:p.nombre,accion,n:1,todo:false,dicho:String(c.dicho||""),fecha:today(),tienda:"",precio:null,pq:0,vence:"",minimo:null,base:p.cantidad,
+        repetido:rc?Math.max(1,Math.round(rc.hace/60000)):0});continue}
     rows.push({key:uid(),productoId:p.id,nombre:p.nombre,accion,n,todo,dicho:String(c.dicho||""),fecha:validDate(c.fecha,true)?c.fecha:today(),tienda:String(c.tienda||"").trim(),
       precio:c.precio!=null&&isFinite(c.precio)&&+c.precio>0?Math.round(+c.precio*10000)/10000:null,pq,vence:validDate(c.vence,false)?c.vence:"",minimo:Number.isInteger(+c.minimo)&&c.minimo!==null&&c.minimo!==""&&+c.minimo>=0?+c.minimo:null,base:p.cantidad});
   }
   if(rows.length)insertCard({k:"cambios",id:uid(),rows,state:"pending",msg:""});
-  const txt=rows.map(r=>`${r.nombre}: ${r.base} → ${rowAfter(r)}`).join("; ");
+  const txt=rows.map(r=>`${r.nombre}: ${r.base} → ${rowAfter(r)}${r.accion==="abrir"?" sin abrir":""}${r.repetido?` (OJO: ya se registró un cambio hace ${r.repetido} min; pregunta si es otro distinto)`:""}`).join("; ");
   return (rows.length?`Mostré una tarjeta para confirmar: ${txt}. Todavía NO está guardado: la persona debe tocar Guardar.`:"No se mostró ningún cambio.")+(bad.length?` Estos ids no existen en el inventario: ${bad.join(", ")}. Búscalos primero con buscar_productos.`:"");
 }
 function stageNew(o){
@@ -116,14 +127,14 @@ const ASST_TOOLS=()=>[
   {name:"buscar_productos",description:"Busca productos en el inventario de la casa leyendo la base de datos en este momento. Devuelve hasta 5 coincidencias con id, cantidad en casa, estado, vencimiento y alias. Úsala SIEMPRE antes de hablar de un producto o de proponer cambios.",
     inputSchema:{type:"object",properties:{texto:{type:"string",description:"nombre, marca, apodo o código de barras del producto"}},required:["texto"]},
     async execute(i){const list=await freshAll();const r=searchIn(list,String(i.texto||""));return r.length?{encontrados:r.map(compact)}:{encontrados:[],nota:"No está en el inventario."}}},
-  {name:"listar_productos",description:"Lista productos del inventario leyendo la base de datos ahora. filtro: por_comprar (se acabó o queda poco), vence_pronto (vence en 7 días o menos) o todo. lugar opcional: Nevera, Congelador, Despensa, Baño, Lavandería u Otro.",
-    inputSchema:{type:"object",properties:{filtro:{type:"string",enum:["por_comprar","vence_pronto","todo"]},lugar:{type:"string"}},required:["filtro"]},
-    async execute(i){let list=await freshAll();const f=String(i.filtro);if(f==="por_comprar")list=list.filter(needsBuy);else if(f==="vence_pronto")list=list.filter(useSoon);if(i.lugar)list=list.filter(p=>norm(p.ubicacion)===norm(i.lugar));return{total:list.length,productos:list.slice(0,40).map(compact)}}},
+  {name:"listar_productos",description:"Lista productos del inventario leyendo la base de datos ahora. filtro: por_comprar (se acabó o queda poco), vence_pronto (vence en 7 días o menos), se_acaba_pronto (por el consumo se acabaría en la cantidad de días que digas en dias o menos; por defecto 7) o todo. lugar opcional: Nevera, Congelador, Despensa, Baño, Lavandería u Otro.",
+    inputSchema:{type:"object",properties:{filtro:{type:"string",enum:["por_comprar","vence_pronto","se_acaba_pronto","todo"]},dias:{type:"number"},lugar:{type:"string"}},required:["filtro"]},
+    async execute(i){let list=await freshAll();const f=String(i.filtro);if(f==="por_comprar")list=list.filter(needsBuy);else if(f==="vence_pronto")list=list.filter(useSoon);else if(f==="se_acaba_pronto"){const d=+i.dias>0?+i.dias:7;list=list.filter(p=>{const x=daysLeft(p);return(x!==null&&x<=d)||(p.cantidad<=0&&!enUso(p))}).sort((a,b)=>(daysLeft(a)??0)-(daysLeft(b)??0))}if(i.lugar)list=list.filter(p=>norm(p.ubicacion)===norm(i.lugar));return{total:list.length,productos:list.slice(0,40).map(compact)}}},
   {name:"ver_producto",description:"Lee un producto por su id directamente de la base de datos, con sus últimos movimientos (compras con precio y tienda, usos).",
     inputSchema:{type:"object",properties:{id:{type:"string"}},required:["id"]},
     async execute(i){const p=await freshOne(String(i.id));if(!p)throw new Error("Ese id no existe");return{...compact(p),movimientos:(p.historial||[]).slice(-6).map(h=>`${h.f}: ${h.t==="c"?"compró":h.t==="u"?"usó":"ajustó"} ${h.n}${h.p!=null?` a ${h.p} c/u`:""}${h.s?` en ${h.s}`:""}`)}}},
-  {name:"proponer_cambios",description:"Muestra en pantalla una tarjeta con cambios de cantidad para que la persona los confirme. NO guarda nada. accion: compra (suma), uso (resta; todo=true si se acabó), ajustar (deja la cantidad exacta). Usa solo ids que te dio buscar_productos.",
-    inputSchema:{type:"object",properties:{cambios:{type:"array",items:{type:"object",properties:{productoId:{type:"string"},accion:{type:"string",enum:["compra","uso","ajustar"]},cantidad:{type:"number"},todo:{type:"boolean"},dicho:{type:"string",description:"cómo lo llamó la persona"},fecha:{type:"string",description:"AAAA-MM-DD de la compra"},tienda:{type:"string"},paquetes:{type:"number",description:"si habló de paquetes, cartones, cajas o bolsas: cuántos compró; la app multiplica por las unidades que trae cada uno"},precio:{type:"number",description:"precio por unidad suelta"},precioPaquete:{type:"number",description:"precio de cada paquete o cartón, si lo dijo así"},vence:{type:"string",description:"AAAA-MM-DD"},minimo:{type:"number",description:"avisar cuando queden (unidades sueltas)"}},required:["productoId","accion"]}}},required:["cambios"]},
+  {name:"proponer_cambios",description:"Muestra en pantalla una tarjeta con cambios de cantidad para que la persona los confirme. NO guarda nada. accion: compra (suma), uso (resta; todo=true si se acabó), ajustar (deja la cantidad exacta), abrir (cambió o empezó una unidad nueva, como cambié el rollo o abrí otra botella; resta 1 de las sin abrir y le enseña al Consumo Inteligente cuánto duró la anterior). Usa solo ids que te dio buscar_productos.",
+    inputSchema:{type:"object",properties:{cambios:{type:"array",items:{type:"object",properties:{productoId:{type:"string"},accion:{type:"string",enum:["compra","uso","ajustar","abrir"]},cantidad:{type:"number"},todo:{type:"boolean"},dicho:{type:"string",description:"cómo lo llamó la persona"},fecha:{type:"string",description:"AAAA-MM-DD de la compra"},tienda:{type:"string"},paquetes:{type:"number",description:"si habló de paquetes, cartones, cajas o bolsas: cuántos compró; la app multiplica por las unidades que trae cada uno"},precio:{type:"number",description:"precio por unidad suelta"},precioPaquete:{type:"number",description:"precio de cada paquete o cartón, si lo dijo así"},vence:{type:"string",description:"AAAA-MM-DD"},minimo:{type:"number",description:"avisar cuando queden (unidades sueltas)"}},required:["productoId","accion"]}}},required:["cambios"]},
     execute(i){return stageChanges(i.cambios)}},
   {name:"pedir_producto_nuevo",description:"Cuando la persona compró algo que NO está en el inventario (buscar_productos no lo encontró): muestra una tarjeta que le pide escanear el código de barras o tomar una foto (o elegir 'No tiene código' para frutas, verduras o pan) y luego confirmar. NO guarda nada.",
     inputSchema:{type:"object",properties:{nombre:{type:"string"},dicho:{type:"string"},cantidad:{type:"number",description:"unidades sueltas"},paquetes:{type:"number",description:"cuántos paquetes o cartones compró, si lo dijo así"},unidadesPorPaquete:{type:"number",description:"cuántas unidades trae cada paquete (ej. 12 huevos), si lo dijo"},empaque:{type:"string",enum:EMPAQUES},unidad:{type:"string",description:"cómo se llama cada unidad, en singular (ej. huevo)"},precioPaquete:{type:"number"},marca:{type:"string"},tamano:{type:"string"},categoria:{type:"string",enum:CATS},ubicacion:{type:"string",enum:UBIS},tienda:{type:"string"},fecha:{type:"string"},precio:{type:"number"},vence:{type:"string"},minimo:{type:"number"}},required:["nombre"]},
@@ -135,6 +146,7 @@ Reglas:
 - Para compras, usos o correcciones usa proponer_cambios con los ids encontrados. Tú no guardas nada: la persona confirma en pantalla. Nunca digas que ya se guardó.
 - Si compró algo que no existe en el inventario, usa pedir_producto_nuevo con todo lo que dijo (nombre, cantidad, marca, tamaño, tienda, fecha, precio, vencimiento) y explica que necesita una foto o el código de barras, o "No tiene código" si es fruta, verdura o pan.
 - Si hay varias coincidencias posibles, pregunta cuál con opciones cortas antes de proponer.
+- Consumo Inteligente: si dice que cambió, abrió o empezó un rollo, botella, paquete, tubo o barra ("cambié un rollo de papel"), usa proponer_cambios con accion abrir (una unidad por cambio). Si el resultado dice que ya se registró uno hace pocos minutos, pregunta si es otro distinto antes de que lo guarde. Para "¿cuánto me queda?" o "¿cuántos días me dura?" responde con consumoInteligente (días estimados, cuánto dura cada unidad y la confianza; si la confianza es baja, di que es una estimación provisional). "Sin abrir" es lo confirmado; el total con la unidad abierta es estimado. Para "¿qué se acaba esta semana?" usa listar_productos con filtro se_acaba_pronto y dias 7.
 - Las cantidades del inventario son unidades sueltas (por ejemplo, huevos). Si la persona habla de cartones, cajas o paquetes, usa el campo "paquetes" y la app multiplica por "unidadesPorPaquete". Al responder cantidades, di las unidades y, si ayuda, cuántos paquetes son ("8 huevos, menos de un cartón"). Una docena son 12 unidades.
 - Singular, plural, diminutivos y errores de dictado son el mismo producto. Fechas relativas a AAAA-MM-DD. Si dice un precio total por varias unidades, divídelo.
 - Después de proponer cambios o un producto nuevo, termina preguntando si lo guardas: la persona puede decir “sí” o tocar Guardar.
@@ -277,7 +289,7 @@ function buildAsst(){
   renderFeed();
 }
 /* Escenario del modo manos libres: escucha · piensa · responde · confirma · listo */
-const ACC={compra:["plus","Sumar"],uso:["box","Usar"],ajustar:["edit","Corregir"]};
+const ACC={compra:["plus","Sumar"],uso:["box","Usar"],ajustar:["edit","Corregir"],abrir:["trend","Abrir otro"]};
 /* Personaje animado (mujer u hombre, según la voz elegida). Es el botón para hablar: tocarlo escucha; tocarlo otra vez se detiene. */
 function avImg(g){g=g||Voz.personaje();return `<img class="av-img" data-av src="${Voz.imagen(g)}" alt="" width="420" height="415" draggable="false" decoding="async">`}
 function estadoAv(){return asst.listening?"Escuchando…":Voz.hablando?`${esc(Voz.nombre())} está hablando`:"Toca para hablar"}
@@ -297,8 +309,8 @@ function mlCambios(c){
   return `<div class="ml-card"><span class="aitag" style="color:var(--ink)">${icon("edit")}${c.rows.length>1?`Confirma ${c.rows.length} cambios`:"Confirma"}</span>
     ${c.rows.map(r=>{const a=ACC[r.accion]||ACC.ajustar;const info=[r.tienda,r.fecha&&r.fecha!==today()?fmtDate(r.fecha):"",r.precio!=null?money(r.precio)+" c/u":""].filter(Boolean).join(" · ");
       return `<div class="ml-fila"><div class="t"><span class="acc">${icon(a[0])}${a[1]}</span>${info?`<span class="hint">${esc(info)}</span>`:""}</div>
-      <div class="t"><div style="min-width:0"><b class="ml-nom">${esc(r.nombre)}</b>${r.accion!=="ajustar"&&!r.todo?`<br><span class="hint">${esc(rowDesc(r))}</span>`:""}</div><span class="q">${r.base} → ${rowAfter(r)} <small>en casa</small></span></div>
-      ${r.todo?"":`<div class="t"><span class="stepper sm"><button data-cq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><button data-cq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>${c.rows.length>1?`<button class="linkbtn danger" data-crm="${r.key}" data-c="${c.id}">Quitar</button>`:""}</div>`}</div>`}).join("")}
+      <div class="t"><div style="min-width:0"><b class="ml-nom">${esc(r.nombre)}</b>${r.accion!=="ajustar"&&!r.todo?`<br><span class="hint">${esc(rowDesc(r))}</span>`:""}</div><span class="q">${r.base} → ${rowAfter(r)} <small>${r.accion==="abrir"?"sin abrir":"en casa"}</small></span></div>
+      ${r.todo||r.accion==="abrir"?"":`<div class="t"><span class="stepper sm"><button data-cq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><button data-cq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>${c.rows.length>1?`<button class="linkbtn danger" data-crm="${r.key}" data-c="${c.id}">Quitar</button>`:""}</div>`}</div>`}).join("")}
     ${c.msg?`<div class="notice warn">${icon("alert")}<span>${esc(c.msg)}</span></div>`:""}
     <div class="row"><button class="btn" data-ccancel="${c.id}" style="flex:1">No</button><button class="btn primary" data-csave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Guardando…":"Sí, guardar"}</button></div></div>`;
 }
@@ -357,7 +369,7 @@ function cardHTML(c){
     if(c.state==="cancelled")return `<div class="ccard off"><span class="hint">Cambios cancelados</span></div>`;
     return `<div class="ccard"><span class="aitag">${icon("edit")}Confirma los cambios</span>
       ${c.rows.map(r=>`<div class="crow"><div style="min-width:0"><b>${esc(r.nombre)}</b><br><span class="hint">${esc(rowDesc(r))}</span></div>
-        <div class="cq"><span class="qty" style="font-size:1.3rem">${r.base} → ${rowAfter(r)}</span>${r.todo?"":`<span class="stepper sm"><button data-cq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><button data-cq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>`}<button class="xbtn" data-crm="${r.key}" data-c="${c.id}" aria-label="Quitar">${icon("close")}</button></div></div>`).join("")}
+        <div class="cq"><span class="qty" style="font-size:1.3rem">${r.base} → ${rowAfter(r)}</span>${r.todo||r.accion==="abrir"?"":`<span class="stepper sm"><button data-cq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><button data-cq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>`}<button class="xbtn" data-crm="${r.key}" data-c="${c.id}" aria-label="Quitar">${icon("close")}</button></div></div>`).join("")}
       ${c.msg?`<div class="notice warn">${icon("alert")}<span>${esc(c.msg)}</span></div>`:""}
       <div class="row"><button class="btn sm" data-ccancel="${c.id}" style="flex:1">Cancelar</button><button class="btn sm primary" data-csave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Revisando…":"Guardar"}</button></div></div>`;
   }
@@ -421,6 +433,7 @@ async function saveCambios(c){
     let p=work[r.productoId]||JSON.parse(JSON.stringify(fresh[r.productoId]));
     if(r.minimo!=null)p.minimo=r.minimo;learnAlias(p,r.dicho);
     if(r.accion==="compra")p=applyPurchase(p,{n:r.n,f:r.fecha,precio:r.precio,tienda:r.tienda,vence:r.vence,pq:r.pq,pp:r.pq?ppOf(p):1});
+    else if(r.accion==="abrir")p=Consumo.abrir(p,{u:me||""});
     else if(r.accion==="uso")p=applyUse(p,r.todo?p.cantidad:Math.min(r.n,p.cantidad));
     else{const d=r.n-p.cantidad;if(d){const h={t:"a",n:d,f:today()};if(me)h.u=me;p={...p,cantidad:r.n,historial:[...(p.historial||[]),h].slice(-40)};if(r.n===0)p.vence=""}}
     work[r.productoId]=p;

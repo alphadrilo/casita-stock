@@ -42,11 +42,13 @@ function rate(p){
   const first=w.reduce((m,e)=>e.f<m?e.f:m,today());
   return used/Math.max(7,dayDiff(first,today()));
 }
-const daysLeft=p=>{const r=rate(p);return r?p.cantidad/r:null};
+const daysLeft=p=>{if(typeof Consumo!=="undefined"&&Consumo.activo(p)){const e=Consumo.estimar(p);if(e.dias!=null)return e.dias}const r=rate(p);return r?p.cantidad/r:null};
+// Con Consumo Inteligente, la unidad abierta también cuenta como "hay en casa"
+const enUso=p=>!!(p&&p.consumo&&p.consumo.activo&&p.consumo.abierto);
 const sugMin=p=>{const r=rate(p);return r?Math.max(1,Math.ceil(r*5)):null};
 const recBuy=p=>{const r=rate(p);const byUse=r?Math.ceil(r*14)-p.cantidad:0;return Math.max(1,byUse,(p.minimo||0)+1-p.cantidad)};
 function status(p){
-  if(p.cantidad<=0)return["out","Se acabó","x"];
+  if(p.cantidad<=0)return enUso(p)?["low","Queda el último","alert"]:["out","Se acabó","x"];
   const dl=daysLeft(p);
   if(p.cantidad<=p.minimo||(dl!==null&&dl<3))return["low","Queda poco","alert"];
   return["ok","Hay suficiente","check"];
@@ -187,7 +189,7 @@ function applyPurchase(p,{n,f,precio,tienda,vence,pq,pp,cid}){
   if(vence)np.vence=(p.vence&&p.cantidad>0&&p.vence<vence)?p.vence:vence;
   const h={t:"c",n,f};if(precio!=null)h.p=precio;if(tienda)h.s=tienda;if(me)h.u=me;if(pq&&pp>1){h.pq=pq;h.pp=pp}if(cid)h.cid=cid;
   np.historial=[...(p.historial||[]),h].slice(-40);
-  return np;
+  return typeof Consumo!=="undefined"?Consumo.alComprar(np):np;
 }
 /* Guarda en el producto cómo viene el paquete de este código */
 function setPack(p,{code,pp,empaque,unidad,principal}){
@@ -605,7 +607,8 @@ function renderDone(v,bar){
 
 /* ================= Inventario ================= */
 async function useOne(id){
-  const p=inventory.find(x=>x.id===id);if(!p||p.cantidad<=0||!canWrite)return;
+  const p0=inventory.find(x=>x.id===id);if(p0&&Consumo.activo(p0)&&canWrite)return consRegistrar(p0,"abrir");
+  const p=p0;if(!p||p.cantidad<=0||!canWrite)return;
   const prev=JSON.parse(JSON.stringify(p));const np=applyUse(p,1);
   try{await saveP(np);const[s]=status(np);
     toast(np.cantidad===0?`Se acabó ${np.nombre}. Va a tu lista.`:s==="low"?`Quedan ${qtyTxt(np)}. Va a tu lista.`:`Quedan ${qtyTxt(np)}${np.unidad?"":" de "+np.nombre}`,()=>saveP(prev))}catch(e){writeErr(e)}
@@ -619,7 +622,7 @@ function itemHTML(p){
       <span class="tags"><span class="state ${s}">${icon(ic)}${t}</span>${e?`<span class="pill ${e.cls}">${icon("clock")}${e.text}</span>`:""}</span>
       ${enPaq(p)?`<span class="m">${esc(enPaq(p))}</span>`:""}
       ${dl&&s!=="out"?`<span class="m">${dl}</span>`:""}</button>
-    <div class="qtybox"><div class="qty">${p.cantidad}<small>${p.unidad?esc(uni(p,p.cantidad)):"en casa"}</small></div>${canWrite?`<button class="use" data-use="${p.id}" ${p.cantidad?"":"disabled"}>Usé 1</button>`:""}</div></div>`;
+    <div class="qtybox"><div class="qty">${p.cantidad}<small>${p.unidad?esc(uni(p,p.cantidad)):"en casa"}</small></div>${canWrite?(Consumo.activo(p)?`<button class="use" data-use="${p.id}" ${p.cantidad?"":"disabled"} aria-label="Abrí otro ${esc(uni(p,1))} de ${esc(p.nombre)}">Abrí otro</button>`:`<button class="use" data-use="${p.id}" ${p.cantidad?"":"disabled"}>Usé 1</button>`):""}</div></div>`;
 }
 function renderInv(v,bar){
   bar.innerHTML=canWrite?`<button class="btn primary" id="go-add">${icon("scan")}Agregar un producto</button>`:"";
@@ -634,7 +637,8 @@ function renderInv(v,bar){
   const q=norm(invQuery);if(q)list=sorted.filter(p=>[p.nombre,p.marca,p.codigo,p.categoria,...(p.alias||[])].some(x=>norm(x).includes(q)));
   if(invUbi)list=list.filter(p=>(p.ubicacion||"")===invUbi);
   const ubis=UBIS.filter(u=>inventory.some(p=>p.ubicacion===u));
-  v.innerHTML=`<section class="card">
+  const avisos=consAvisosHTML();
+  v.innerHTML=`${q?"":avisos}<section class="card">
       <p class="summary-line">Tienes <b>${plural(inventory.length,"producto")}</b>. ${falta.length?`Hay que comprar <b>${falta.length}</b>.`:"No falta nada."}${pronto.length?` <b>${pronto.length}</b> ${pronto.length===1?"vence":"vencen"} pronto.`:""}</p>
       <input type="search" id="q" value="${esc(invQuery)}" placeholder="Buscar producto, marca o código" aria-label="Buscar">
       ${q?"":`<div class="seg" role="group" aria-label="Filtro"><button data-f="pronto" aria-pressed="${invFilter==="pronto"}">Úsalo pronto (${pronto.length})</button><button data-f="falta" aria-pressed="${invFilter==="falta"}">Por comprar (${falta.length})</button><button data-f="todo" aria-pressed="${invFilter==="todo"}">Todo (${inventory.length})</button></div>`}
@@ -648,6 +652,7 @@ function renderInv(v,bar){
   $$("[data-u]").forEach(b=>b.onclick=()=>{invUbi=b.dataset.u;render()});
   $$("[data-use]").forEach(b=>b.onclick=()=>useOne(b.dataset.use));
   $$("[data-open]").forEach(b=>b.onclick=()=>openSheet(b.dataset.open));
+  bindAvisos();
   if($("#csv"))$("#csv").onclick=exportCSV;
   if($("#delex"))$("#delex").onclick=async()=>{const b=$("#delex");if(b.dataset.c!=="1"){b.dataset.c="1";b.innerHTML=icon("trash")+"Toca otra vez para borrar los ejemplos";return}
     const ex=inventory.filter(x=>x.ejemplo).map(x=>JSON.parse(JSON.stringify(x)));
@@ -723,14 +728,16 @@ function renderSheet(){
     <div class="grab" aria-hidden="true"></div>
     <div class="top"><span class="tags"><span class="state ${s}">${icon(ic)}${t}</span>${e?`<span class="pill ${e.cls}">${icon("clock")}${e.text}</span>`:""}</span><button class="x" id="shx" aria-label="Cerrar">${icon("close")}</button></div>
     <img class="hero" src="${p.foto||NO_PHOTO}" alt="">
+    ${!p.foto&&canWrite?`<button class="btn" id="addfoto">${icon("cam")}Agregar foto</button>`:""}
     <div><h2 id="sh-t">${esc(p.nombre)}</h2><p class="lead">${esc([p.marca,p.tamano,p.categoria,p.ubicacion].filter(Boolean).join(" · "))}</p></div>
     ${p.alias&&p.alias.length?`<p class="hint" style="margin:0">También lo llamas: ${p.alias.map(a=>esc(a)).join(", ")}</p>`:""}
     <section class="card ai" style="padding:16px">
       <div class="top"><span class="aitag">${icon("spark")}Sobre este producto</span>${aiState==="ready"&&!busy?`<button class="linkbtn ai" id="redo" style="min-height:36px;padding:0">${p.descripcionIA?"Actualizar":"Describir"}</button>`:""}</div>
       <div id="desc">${descHTML(p)}</div>
     </section>
-    <div class="field"><span class="lbl">En casa${p.unidad?` <span class="hint">(${esc(uni(p,2))})</span>`:""} ${enPaq(p)?`<span class="hint">· ${esc(enPaq(p))}</span>`:""} ${dl?`<span class="hint">· ${dl}</span>`:""}</span>
-      ${canWrite?`<div class="stepper sm"><button id="am" aria-label="Quitar uno">−</button><output>${p.cantidad}</output><button id="ap" aria-label="Agregar uno">+</button></div>`:`<div class="qty" style="text-align:left">${p.cantidad}</div>`}</div>
+    ${consHTML(p)}
+    ${Consumo.activo(p)?"":`<div class="field"><span class="lbl">En casa${p.unidad?` <span class="hint">(${esc(uni(p,2))})</span>`:""} ${enPaq(p)?`<span class="hint">· ${esc(enPaq(p))}</span>`:""} ${dl?`<span class="hint">· ${dl}</span>`:""}</span>
+      ${canWrite?`<div class="stepper sm"><button id="am" aria-label="Quitar uno">−</button><output>${p.cantidad}</output><button id="ap" aria-label="Agregar uno">+</button></div>`:`<div class="qty" style="text-align:left">${p.cantidad}</div>`}</div>`}
     <div class="facts">
       <div class="fact"><span>Última compra</span><b>${fmtDate(p.fechaCompra)}</b></div>
       ${ppOf(p)>1?`<div class="fact"><span>Viene en</span><b>${esc(packDesc(p,ppOf(p)))}</b>${Object.keys(p.paquetes||{}).length>1?` <span>${Object.keys(p.paquetes).length} tamaños</span>`:""}</div>`:""}
@@ -748,10 +755,12 @@ function renderSheet(){
   $("#scrim").onclick=ev=>{if(ev.target.id==="scrim")closeSheet()};
   if($("#redo"))$("#redo").onclick=()=>describe(p,true);
   const adj=async d=>{if(d<0){if(p.cantidad<=0)return;try{await saveP(applyUse(p,1))}catch(err){writeErr(err)}}else{const h={t:"a",n:1,f:today()};if(me)h.u=me;try{await saveP({...p,cantidad:p.cantidad+1,historial:[...(p.historial||[]),h].slice(-40)})}catch(err){writeErr(err)}}};
+  bindCons(p);
   if($("#am"))$("#am").onclick=()=>adj(-1);
   if($("#ap"))$("#ap").onclick=()=>adj(1);
   if($("#applysm"))$("#applysm").onclick=async()=>{try{await saveP({...p,minimo:sm});toast(`Te avisaremos cuando queden ${sm}`)}catch(err){writeErr(err)}};
-  if($("#edit"))$("#edit").onclick=()=>{editing={nombre:p.nombre,marca:p.marca||"",tamano:p.tamano||"",categoria:p.categoria,ubicacion:p.ubicacion||"Despensa",minimo:p.minimo,vence:p.vence||"",empaque:ppOf(p)>1?(p.empaque||"Paquete"):"Suelto",pp:ppOf(p),unidad:p.unidad||"",paquetes:{...(p.paquetes||{})}};renderSheet()};
+  if($("#addfoto"))$("#addfoto").onclick=()=>$("#edit").click();
+  if($("#edit"))$("#edit").onclick=()=>{editing={foto:p.foto||"",nombre:p.nombre,marca:p.marca||"",tamano:p.tamano||"",categoria:p.categoria,ubicacion:p.ubicacion||"Despensa",minimo:p.minimo,vence:p.vence||"",empaque:ppOf(p)>1?(p.empaque||"Paquete"):"Suelto",pp:ppOf(p),unidad:p.unidad||"",paquetes:{...(p.paquetes||{})}};renderSheet()};
   if($("#tolist"))$("#tolist").onclick=async()=>{try{await store.set("lista","p_"+p.id,{productoId:p.id,nombre:p.nombre,cantidad:recBuy(p),marcado:false,creado:Date.now(),u:me||""});toast(`${p.nombre} está en tu lista`)}catch(err){writeErr(err)}};
   if($("#del"))$("#del").onclick=()=>{confirmDel=true;renderSheet()};
   if($("#nodel"))$("#nodel").onclick=()=>{confirmDel=false;renderSheet()};
@@ -763,6 +772,12 @@ function renderEdit(host,p){
   host.innerHTML=`<div class="sheet-wrap" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ed-t">
     <div class="grab" aria-hidden="true"></div>
     <div class="top"><h2 id="ed-t">Editar ${esc(p.nombre)}</h2><button class="x" id="edx" aria-label="Cancelar">${icon("close")}</button></div>
+    <div class="field"><span class="lbl">Foto</span>
+      <div class="e-foto">${E.foto?`<img src="${E.foto}" alt="Foto de ${esc(E.nombre)}">`:`<span class="ph">${icon("cam")}</span>`}
+        <div class="e-foto-acc"><span class="hint">${E.foto?"Así se ve en tu inventario y en la lista.":"Sin foto. Agrégala para reconocerlo más rápido."}</span>
+          <div class="row"><label class="btn sm">${icon("cam")}Tomar foto<input type="file" id="e-cam" accept="image/*" capture="environment" aria-label="Tomar foto del producto"></label>
+          <label class="btn sm">${icon("image")}Elegir foto<input type="file" id="e-gal" accept="image/*" aria-label="Elegir una foto de tus fotos"></label></div>
+          ${E.foto?`<button class="linkbtn danger" id="e-qf">${icon("trash")}Quitar foto</button>`:""}</div></div></div>
     <div class="field"><label for="e-n">Nombre</label><input type="text" id="e-n" value="${esc(E.nombre)}"></div>
     <div class="row"><div class="field"><label for="e-m">Marca</label><input type="text" id="e-m" value="${esc(E.marca)}"></div><div class="field"><label for="e-t">Tamaño</label><input type="text" id="e-t" value="${esc(E.tamano)}"></div></div>
     <div class="field"><span class="lbl">Tipo</span><div class="chips">${CATS.map(c=>`<button class="chip sm" data-ec="${esc(c)}" aria-pressed="${c===E.categoria}">${c}</button>`).join("")}</div></div>
@@ -782,13 +797,140 @@ function renderEdit(host,p){
   if($("#e-pp"))$("#e-pp").oninput=e=>{const n=parseInt(e.target.value.replace(/\D/g,""));E.pp=n>0?n:1};
   if($("#e-u"))$("#e-u").oninput=e=>E.unidad=e.target.value;
   $$("[data-ex]").forEach(b=>b.onclick=()=>{delete E.paquetes[b.dataset.ex];renderSheet()});
+  // Foto: con la cámara o de la galería; se achica igual que al agregar un producto
+  const ponerFoto=async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
+    try{const r=await processPhoto(f);E.foto=r.foto;renderSheet()}catch(err){toast("No se pudo abrir esa foto. Prueba con otra.")}};
+  $("#e-cam").onchange=ponerFoto;$("#e-gal").onchange=ponerFoto;
+  if($("#e-qf"))$("#e-qf").onclick=()=>{E.foto="";renderSheet()};
   const cancel=()=>{editing=null;renderSheet()};
   $("#edx").onclick=cancel;$("#edc").onclick=cancel;
   $("#eds").onclick=async()=>{if(!E.nombre.trim()){toast("El producto necesita un nombre");return}
     const pq={...E.paquetes};if(p.codigo&&pq[p.codigo]!==undefined)pq[p.codigo]=E.pp;
-    try{await saveP({...p,nombre:E.nombre.trim(),marca:E.marca.trim(),tamano:E.tamano.trim(),categoria:E.categoria,ubicacion:E.ubicacion,minimo:E.minimo,vence:E.vence,empaque:E.empaque,porPaquete:E.empaque==="Suelto"?1:Math.max(1,E.pp),unidad:E.unidad.trim(),paquetes:pq});editing=null;toast("Cambios guardados");renderSheet()}catch(err){writeErr(err)}};
+    try{await saveP({...p,foto:E.foto||"",nombre:E.nombre.trim(),marca:E.marca.trim(),tamano:E.tamano.trim(),categoria:E.categoria,ubicacion:E.ubicacion,minimo:E.minimo,vence:E.vence,empaque:E.empaque,porPaquete:E.empaque==="Suelto"?1:Math.max(1,E.pp),unidad:E.unidad.trim(),paquetes:pq});editing=null;toast("Cambios guardados");renderSheet()}catch(err){writeErr(err)}};
 }
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&typeof asst!=="undefined"&&asst.open)return;if(e.key==="Escape"&&sheetId){if(editing){editing=null;renderSheet()}else closeSheet()}});
+
+/* ================= Consumo Inteligente (pantalla) =================
+   El cálculo vive en consumo.js. Aquí: la sección de la ficha, los avisos y el registro de cambios. */
+let consUI={id:null,paso:null,desde:"hoy",unidad:"",corr:null};
+const CONS_UNIDADES=["rollo","botella","paquete","bolsa","tubo","frasco","barra","caja","unidad"];
+const CONS_CONF={alta:["Confianza alta","ok"],media:["Confianza media","soon"],baja:["Estimación provisional","low"]};
+const diasTxt=d=>d<1?"menos de 1 día":d<1.5?"1 día":`${Math.round(d)} días`;
+const porUnidadTxt=(p,est)=>est<1?`unas ${Math.max(1,Math.round(1/est))} ${uni(p,2)} por día`:`1 ${uni(p,1)} cada ${est<1.5?"día":Math.round(est*10)/10%1?String(Math.round(est*10)/10).replace(".",",")+" días":Math.round(est)+" días"}`;
+function consHistTxt(p,e){const q=uni(p,1),f=new Date(e.ts);const fecha=fmtDate(localISO(f));
+  const quien=e.u?`<span data-uid="${esc(e.u)}"></span>`:"";
+  if(e.k==="abrir")return `<b>${cap0(fecha)}</b><span>Abrió ${q==="unidad"?"una nueva":"otro "+esc(q)}${e.d?` · el anterior duró ${diasTxt(e.d/Consumo.DIA)}`:""}${quien}</span>`;
+  if(e.k==="fin")return `<b>${cap0(fecha)}</b><span>Se terminó${e.d?` (duró ${diasTxt(e.d/Consumo.DIA)})`:""}${quien}</span>`;
+  return `<b>${cap0(fecha)}</b><span>Corrección: ${e.n} sin abrir${e.a?" + 1 en uso":""}${quien}</span>`}
+function consHTML(p){
+  if(!canWrite&&!Consumo.activo(p))return"";
+  const U=consUI.id===p.id?consUI:{paso:null};
+  if(!Consumo.activo(p)){
+    if(U.paso!=="empezar")return `<section class="card cons"><span class="aitag">${icon("trend")}Consumo inteligente</span>
+      <p class="cons-intro">Te digo cuánto te dura y te aviso antes de que se acabe. Solo marca cuando abras ${uni(p,1)==="unidad"?"uno nuevo":"otro "+esc(uni(p,1))}: no tienes que contar nada.</p>
+      <button class="btn primary" id="c-on">${icon("trend")}Empezar a medir</button></section>`;
+    const ops=[["hoy","Hoy"],["ayer","Ayer"],["2","Hace 2 días"],["3","Hace 3 días"],["no","Aún no abro ninguno"]];
+    return `<section class="card cons"><span class="aitag">${icon("trend")}Consumo inteligente</span>
+      ${p.unidad?"":`<div class="field"><span class="lbl">¿Cómo cuentas este producto?</span><div class="chips">${CONS_UNIDADES.map(u=>`<button class="chip sm" data-cu="${u}" aria-pressed="${(U.unidad||"unidad")===u}">${u==="unidad"?"Por unidad":cap0(plu(u))}</button>`).join("")}</div></div>`}
+      <div class="field"><span class="lbl">¿Cuándo empezaste a usar ${p.unidad||U.unidad&&U.unidad!=="unidad"?"el "+esc(p.unidad||U.unidad)+" que está abierto":"el que está abierto"}?</span>
+        <div class="chips">${ops.map(([v,l])=>`<button class="chip sm" data-cd="${v}" aria-pressed="${U.desde===v}">${l}</button>`).join("")}</div>
+        <span class="hint">${U.desde==="no"?`Tienes ${p.cantidad} sin abrir. Cuando abras el primero, toca "Abrí otro".`:`Se toma 1 de los ${p.cantidad} que tienes: quedan ${Math.max(0,p.cantidad-1)} sin abrir y 1 en uso.`}</span></div>
+      <div class="row"><button class="btn" id="c-cancel">Cancelar</button><button class="btn primary" id="c-start">${icon("check")}Empezar</button></div></section>`;
+  }
+  const e=Consumo.estimar(p);const q1=uni(p,1);
+  const lvl=e.dias==null?"":e.dias<=Math.min(2,e.avisarDias)?"bad":e.dias<=e.avisarDias?"warn":"good";
+  const [ct,cc]=CONS_CONF[e.conf];
+  const med=e.est?Consumo.porDiaMedida(p,e.est):null;
+  const ev=Consumo.eventos(p).slice(-6).reverse();
+  const ve=expInfo(p);
+  if(U.paso==="corregir"){const C=U.corr;
+    return `<section class="card cons"><span class="aitag">${icon("edit")}Corregir cantidades</span>
+      <p class="cons-intro">Pon lo que hay de verdad. No cuenta como consumo.</p>
+      <div class="field"><span class="lbl">Sin abrir</span><div class="stepper sm"><button id="cc-m" aria-label="Uno menos">−</button><output id="cc-n">${C.sinAbrir}</output><button id="cc-p" aria-label="Uno más">+</button></div></div>
+      <div class="field"><span class="lbl">¿Hay ${q1==="unidad"?"uno":"un "+esc(q1)} abierto en uso?</span><div class="chips"><button class="chip sm" data-ca="1" aria-pressed="${C.abierto}">Sí</button><button class="chip sm" data-ca="0" aria-pressed="${!C.abierto}">No</button></div></div>
+      <div class="row"><button class="btn" id="cc-x">Cancelar</button><button class="btn primary" id="cc-ok">${icon("check")}Guardar</button></div></section>`}
+  const rep=U.paso==="repetido"?Consumo.reciente(p):null;
+  return `<section class="card cons" aria-labelledby="c-t">
+    <div class="top"><span class="aitag" id="c-t">${icon("trend")}Consumo inteligente</span><span class="pill ${cc}">${ct}</span></div>
+    ${e.dias==null?`<p class="cons-big">Aprendiendo…</p><p class="cons-intro">${e.abierto?`Cuando abras ${q1==="unidad"?"uno nuevo":"otro "+esc(q1)}, toca "Abrí otro" y empiezo a calcular.`:`Toca "Abrí otro" cuando empieces ${q1==="unidad"?"uno":"un "+esc(q1)}.`}</p>`
+      :`<p class="cons-big"><span>Te alcanza para</span> ≈ ${diasTxt(e.dias)}</p><p class="cons-intro">Se acabaría ${fmtDate(e.agota)==="hoy"||fmtDate(e.agota)==="mañana"?fmtDate(e.agota):"el "+fmtDate(e.agota)} si sigues usándolo igual.</p>`}
+    <div class="cons-barra ${lvl}" role="meter" aria-label="Nivel estimado" aria-valuemin="0" aria-valuemax="${e.ref}" aria-valuenow="${Math.round(e.unidadesEst*10)/10}"><i style="width:${Math.round(e.nivel*100)}%"></i></div>
+    <div class="cons-datos">
+      <div><span>Sin abrir <small>(confirmado)</small></span><b>${e.sinAbrir} ${uni(p,e.sinAbrir)}</b></div>
+      <div><span>En uso</span><b>${e.abierto?`1 · abierto ${e.transcurrido<1?"hoy":"hace "+diasTxt(e.transcurrido)}`:"Ninguno"}</b></div>
+      <div><span>Total estimado</span><b>≈ ${String(Math.round(e.unidadesEst*10)/10).replace(".",",")} ${uni(p,2)}</b></div>
+      <div><span>Consumo promedio</span><b>${e.est?porUnidadTxt(p,e.est)+(med?` · ≈ ${String(med.cantidad).replace(".",",")} ${med.unidad} por día`:""):"Todavía no sé"}</b></div>
+      ${ve?`<div><span>Vence <small>(no es lo mismo que acabarse)</small></span><b>${fmtDate(p.vence)}</b></div>`:""}
+    </div>
+    <p class="hint cons-conf">${e.conf==="alta"?`Calculado con tus últimos ${e.n} cambios.`:e.n?`Con ${plural(e.n,"cambio")} registrado${e.n>1?"s":""}. Registra ${Math.max(1,5-e.n)} más y será más preciso.`:e.fuente==="compras"?"Estimado con tus compras. Se ajusta cuando registres cambios.":e.fuente==="usos"?"Estimado con lo que has usado. Se ajusta cuando registres cambios.":"Todavía no hay datos."}${e.ignoradas?` No conté ${plural(e.ignoradas,"registro")} que no parece${e.ignoradas>1?"n":""} real${e.ignoradas>1?"es":""}.`:""}</p>
+    ${e.revisar?`<div class="notice warn">${icon("alert")}<span>Hace ${diasTxt(e.transcurrido)} que nadie registra un cambio. ¿Ya abriste otro? Si es así, toca "Abrí otro".</span></div>`:""}
+    ${rep?`<div class="notice warn">${icon("alert")}<span>${rep.u&&rep.u!==me?"Alguien de tu casa ya registró":"Ya registraste"} uno hace ${Math.max(1,Math.round(rep.hace/60000))} min. ¿Abriste otro más?</span></div>
+      <div class="row"><button class="btn" id="c-rno">No, era el mismo</button><button class="btn primary" id="c-rsi">Sí, otro más</button></div>`
+      :canWrite?`<div class="row"><button class="btn primary" id="c-abrir" ${e.sinAbrir?"":"disabled"}>${icon("plus")}Abrí otro</button><button class="btn" id="c-corr">${icon("edit")}Corregir</button></div>
+      ${e.abierto&&!e.sinAbrir?`<button class="linkbtn" id="c-fin">${icon("check")}Se terminó y no queda otro</button>`:""}`:""}
+    ${canWrite?`<div class="field"><span class="lbl">Avisarme antes de que se acabe</span><div class="chips">${[3,5,7,10,14].map(n=>`<button class="chip sm" data-cav="${n}" aria-pressed="${e.avisarDias===n}">${n} días</button>`).join("")}</div></div>`:""}
+    ${ev.length?`<details class="cons-hist"><summary>Historial de consumo</summary><ul class="list">${ev.map(x=>`<li><div>${consHistTxt(p,x)}</div></li>`).join("")}</ul></details>`:""}
+    ${canWrite?`<button class="linkbtn" id="c-off">Dejar de medir este producto</button>`:""}
+  </section>`;
+}
+/* Guarda un cambio leyendo antes el producto de la base de datos, para no pisar lo que registró otra persona */
+async function consGuardar(p,fn,msg){
+  const fresh=(typeof freshOne==="function"&&await freshOne(p.id))||p;const prev=JSON.parse(JSON.stringify(fresh));
+  const np=fn(fresh);
+  try{await saveP(np);toast(msg(np),()=>saveP(prev));return np}catch(e){writeErr(e);return null}
+}
+async function consRegistrar(p,tipo,{forzar=false}={}){
+  if(!canWrite)return;
+  const ahora=Date.now();
+  if(!forzar){const fresh=(typeof freshOne==="function"&&await freshOne(p.id))||p;if(Consumo.reciente(fresh,ahora,2*60e3)){consUI={...consUI,id:p.id,paso:"repetido"};if(sheetId===p.id)renderSheet();else openSheet(p.id);return}}
+  consUI={...consUI,paso:null};
+  return consGuardar(p,f=>tipo==="fin"?Consumo.terminar(f,{u:me||""}):Consumo.abrir(f,{u:me||""}),np=>{
+    if(tipo==="fin"||np.cantidad===0&&!enUso(np))return `Se acabó ${np.nombre}. Va a tu lista.`;
+    const e=Consumo.estimar(np);const d=Consumo.eventos(np).slice(-1)[0];
+    return `Listo: ${np.cantidad} ${uni(np,np.cantidad)} sin abrir${d&&d.d?`. El anterior duró ${diasTxt(d.d/Consumo.DIA)}`:""}${e.dias!=null?`. Te alcanza para ≈ ${diasTxt(e.dias)}`:""}.`});
+}
+function bindCons(p){
+  const re=()=>renderSheet();
+  if($("#c-on"))$("#c-on").onclick=()=>{consUI={id:p.id,paso:"empezar",desde:"hoy",unidad:p.unidad||"",corr:null};re()};
+  $$("[data-cu]").forEach(b=>b.onclick=()=>{consUI.unidad=b.dataset.cu;re()});
+  $$("[data-cd]").forEach(b=>b.onclick=()=>{consUI.desde=b.dataset.cd;re()});
+  if($("#c-cancel"))$("#c-cancel").onclick=()=>{consUI={id:null,paso:null};re()};
+  if($("#c-start"))$("#c-start").onclick=async()=>{const U=consUI;const atras={hoy:0,ayer:1,"2":2,"3":3}[U.desde];
+    const desde=U.desde==="no"?null:(atras?Date.now()-atras*Consumo.DIA:Date.now());
+    consUI={id:null,paso:null};
+    await consGuardar(p,f=>{if(!f.unidad&&U.unidad&&U.unidad!=="unidad")f={...f,unidad:U.unidad};return Consumo.empezar(f,{abierto:desde!=null,desde:desde||Date.now(),u:me||""})},()=>"Listo: empecé a medir. Marca cuando abras otro.")};
+  if($("#c-abrir"))$("#c-abrir").onclick=()=>consRegistrar(p,"abrir");
+  if($("#c-fin"))$("#c-fin").onclick=()=>consRegistrar(p,"fin");
+  if($("#c-rsi"))$("#c-rsi").onclick=()=>consRegistrar(p,"abrir",{forzar:true});
+  if($("#c-rno"))$("#c-rno").onclick=()=>{consUI.paso=null;re()};
+  if($("#c-corr"))$("#c-corr").onclick=()=>{consUI={id:p.id,paso:"corregir",corr:{sinAbrir:p.cantidad,abierto:enUso(p)}};re()};
+  if($("#cc-m"))$("#cc-m").onclick=()=>{consUI.corr.sinAbrir=Math.max(0,consUI.corr.sinAbrir-1);$("#cc-n").textContent=consUI.corr.sinAbrir};
+  if($("#cc-p"))$("#cc-p").onclick=()=>{consUI.corr.sinAbrir++;$("#cc-n").textContent=consUI.corr.sinAbrir};
+  $$("[data-ca]").forEach(b=>b.onclick=()=>{consUI.corr.abierto=b.dataset.ca==="1";re()});
+  if($("#cc-x"))$("#cc-x").onclick=()=>{consUI={id:null,paso:null};re()};
+  if($("#cc-ok"))$("#cc-ok").onclick=async()=>{const C=consUI.corr;consUI={id:null,paso:null};
+    await consGuardar(p,f=>Consumo.corregir(f,{sinAbrir:C.sinAbrir,hayAbierto:C.abierto,u:me||""}),()=>"Cantidad corregida")};
+  $$("[data-cav]").forEach(b=>b.onclick=()=>consGuardar(p,f=>({...f,consumo:{...f.consumo,avisarDias:+b.dataset.cav,aviso:null}}),()=>`Te aviso ${b.dataset.cav} días antes`));
+  if($("#c-off"))$("#c-off").onclick=()=>consGuardar(p,f=>({...f,consumo:{...f.consumo,activo:false,abierto:null}}),()=>"Ya no se mide. Tu historial se conserva.");
+  fillNames();
+}
+/* Avisos: "Tu papel higiénico podría agotarse en 5 días. ¿Quieres agregarlo a tu lista de compras?" */
+function consAvisos(){
+  const enLista=new Set(lista.map(x=>x.productoId).filter(Boolean));
+  return inventory.map(p=>({p,a:Consumo.alerta(p,{enLista:enLista.has(p.id)})})).filter(x=>x.a).sort((x,y)=>x.a.dias-y.a.dias);
+}
+function consAvisosHTML(){
+  if(!loaded||!canWrite)return"";
+  const L=consAvisos().slice(0,3);if(!L.length)return"";
+  return L.map(({p,a})=>`<section class="card cons-aviso" role="status"><span class="ico">${icon("trend")}</span><div>
+    <p>Tu ${esc(p.nombre.toLowerCase())} podría agotarse ${a.dias<1?"hoy o mañana":"en "+diasTxt(a.dias)}${a.provisional?" <small>(estimación provisional)</small>":""}. ¿Quieres agregarlo a tu lista de compras?</p>
+    <div class="row"><button class="btn sm" data-avno="${p.id}">Ahora no</button><button class="btn sm primary" data-avsi="${p.id}">${icon("cart")}Agregar a la lista</button></div></div></section>`).join("");
+}
+function bindAvisos(){
+  $$("[data-avsi]").forEach(b=>b.onclick=async()=>{const p=inventory.find(x=>x.id===b.dataset.avsi);if(!p)return;
+    try{await store.set("lista","p_"+p.id,{productoId:p.id,nombre:p.nombre,cantidad:recBuy(p),marcado:false,creado:Date.now(),u:me||""});toast(`${p.nombre} está en tu lista`)}catch(e){writeErr(e)}});
+  $$("[data-avno]").forEach(b=>b.onclick=async()=>{const p=inventory.find(x=>x.id===b.dataset.avno);if(!p)return;try{await saveP(Consumo.posponer(p))}catch(e){writeErr(e)}});
+}
 
 /* ================= Lista de compras ================= */
 async function toggleNeeded(p){
@@ -807,7 +949,7 @@ function renderList(v,bar){
       ${entry?`<button class="xbtn" data-rl="${entry.id}" aria-label="Quitar de la lista">${icon("close")}</button>`:""}</div>`};
   const rowM=e=>`<div class="rowx"><button class="check" aria-pressed="${!!e.marcado}" data-tm="${e.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(e.nombre)}</span><br><span class="cm">Agregado a mano<span data-uid="${esc(e.u||"")}"></span></span></span><span class="qn">×${e.cantidad||1}</span></button>
       <button class="xbtn" data-rl="${e.id}" aria-label="Quitar de la lista">${icon("close")}</button></div>`;
-  v.innerHTML=`<section class="card">
+  v.innerHTML=`${consAvisosHTML()}<section class="card">
       <p class="summary-line">${all?`Tienes <b>${plural(all,"cosa")}</b> en la lista.${checked.length?` Ya marcaste <b>${checked.length}</b>.`:""}`:"Tu lista está vacía. No falta nada en casa."}</p>
       ${canWrite?`<div class="inline"><input type="text" id="addm" placeholder="Agregar algo, ej. pan" aria-label="Agregar a la lista"><button class="btn sm" id="addmb">${icon("plus")}Agregar</button></div>`:""}
     </section>
@@ -828,6 +970,7 @@ function renderList(v,bar){
   $$("[data-tp]").forEach(b=>b.onclick=()=>{const p=inventory.find(x=>x.id===b.dataset.tp);if(p&&canWrite)toggleNeeded(p)});
   $$("[data-tm]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.tm);if(!e||!canWrite)return;try{await store.set("lista",e.id,{...e,marcado:!e.marcado})}catch(err){writeErr(err)}});
   $$("[data-rl]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.rl);if(!e)return;const copy={...e};try{await store.del("lista",e.id);toast(`${e.nombre} salió de la lista`,()=>store.set("lista",copy.id,copy))}catch(err){writeErr(err)}});
+  bindAvisos();
   if($("#aiList"))$("#aiList").onclick=()=>{openAsst("Revisa mi inventario y mi consumo. ¿Qué más debería comprar esta semana que no esté ya en mi lista? La lista tiene: "+[...lista.map(x=>x.nombre),...auto.map(p=>p.nombre)].join(", "))};
   fillNames();
   if(canWrite)bar.innerHTML=`<button class="btn primary" id="finish" ${checked.length?"":"disabled"}>${icon("check")}${checked.length?`Terminé de comprar (${checked.length})`:"Marca lo que compraste"}</button>`;
