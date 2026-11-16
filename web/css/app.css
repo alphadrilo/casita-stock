@@ -414,3 +414,41 @@ input[type=date]{min-height:48px}
 .av-opc button[aria-checked="true"]{border-color:var(--ai);background:var(--ai-soft)}
 .av-opc .av-img{width:64px;height:64px;border-radius:50%;object-fit:cover;object-position:50% 8%;background:var(--ai-soft)}
 .ml-stage .ml-dicho + .av-wrap{margin-top:16px}
+/* Editar: foto del producto (1.6.1) */
+.e-foto{display:flex;gap:14px;align-items:flex-start}
+.e-foto>img,.e-foto>.ph{width:96px;height:96px;border-radius:14px;object-fit:cover;flex:none;display:grid;place-items:center;background:var(--soft);color:var(--accent)}
+.e-foto>.ph svg.i{width:32px;height:32px}
+.e-foto-acc{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1}
+.e-foto-acc .row{display:flex;gap:8px;flex-wrap:wrap}
+.e-foto-acc label.btn{position:relative;overflow:hidden;flex:1 1 120px;min-height:44px}
+.e-foto-acc label.btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.e-foto-acc .linkbtn{align-self:flex-start;min-height:44px}
+@media (max-width:360px){.e-foto>img,.e-foto>.ph{width:72px;height:72px}}
+/* Consumo inteligente (1.8) */
+.cons{display:flex;flex-direction:column;gap:12px}
+.cons .top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.cons .pill.ok{background:var(--soft);color:var(--accent)}
+.cons-intro{margin:0;color:var(--muted);font-size:.95rem}
+.cons-big{margin:0;font:800 1.7rem/1.15 var(--display,var(--body));letter-spacing:-.01em}
+.cons-big span{display:block;font:700 .82rem var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.cons-barra{height:14px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.cons-barra i{display:block;height:100%;border-radius:999px;background:var(--btn-bg);transition:width .5s ease}
+.cons-barra.warn i{background:var(--p-now)} .cons-barra.bad i{background:var(--bad)}
+.cons-datos{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.cons-datos>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cons-datos span{font-size:.82rem;color:var(--muted)} .cons-datos small{font-size:.75rem}
+.cons-datos b{font-size:.98rem;font-variant-numeric:tabular-nums}
+.cons-conf{margin:0}
+.cons .row{display:flex;gap:10px;flex-wrap:wrap}.cons .row .btn{flex:1 1 140px}
+.cons-hist summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center}
+.cons-hist .list li{font-size:.9rem}
+.cons .linkbtn{align-self:flex-start;min-height:44px}
+.cons-aviso{display:flex;gap:12px;align-items:flex-start;border-left:4px solid var(--p-now)}
+.cons-aviso .ico{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--warn-soft);color:var(--warn)}
+.cons-aviso p{margin:0 0 10px;font-weight:600}.cons-aviso small{font-weight:500;color:var(--muted)}
+.cons-aviso .row{display:flex;gap:8px;flex-wrap:wrap}.cons-aviso .btn{flex:1 1 120px;min-height:44px}
+.cons-aviso>div{min-width:0;flex:1}
+@media (max-width:360px){.cons-datos{grid-template-columns:1fr}.cons-big{font-size:1.45rem}}
+@media (prefers-reduced-motion:reduce){.cons-barra i{transition:none}}
+.cons .row .btn{white-space:nowrap}
+.cons-hist li>div{display:flex;flex-direction:column;gap:2px}.cons-hist li span{color:var(--muted)}
