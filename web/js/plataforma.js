@@ -441,7 +441,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.8.1${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.9${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
