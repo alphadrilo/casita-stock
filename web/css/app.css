@@ -1,4 +1,12 @@
 /* Casita Stock — estilos */
+/* Letras incluidas en la app (funcionan sin internet y en la app de Xcode) */
+@font-face{font-family:"Figtree";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/figtree-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:500;font-display:swap;src:url(../fonts/figtree-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/figtree-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:700;font-display:swap;src:url(../fonts/figtree-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Figtree";font-style:normal;font-weight:800;font-display:swap;src:url(../fonts/figtree-latin-800-normal.woff2) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/bricolage-grotesque-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-style:normal;font-weight:700 800;font-display:swap;src:url(../fonts/bricolage-grotesque-latin-800-normal.woff2) format("woff2")}
 :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;-webkit-tap-highlight-color:transparent}
@@ -452,3 +460,118 @@ input[type=date]{min-height:48px}
 @media (prefers-reduced-motion:reduce){.cons-barra i{transition:none}}
 .cons .row .btn{white-space:nowrap}
 .cons-hist li>div{display:flex;flex-direction:column;gap:2px}.cons-hist li span{color:var(--muted)}
+
+/* =====================================================================
+   Diseño 1.9 — "Despensa ordenada"
+   Mismo logo, mismos colores (esmeralda, amarillo, morado de Lilu) y mismas funciones.
+   Cambia la forma: listas agrupadas como en iOS/Android, el estado del producto en un anillo
+   alrededor de su foto (sin franjas de color), cantidades grandes como etiquetas de despensa,
+   etiquetas en minúsculas, una sola sombra para lo que flota y barra inferior translúcida.
+   ===================================================================== */
+:root{
+  --bg:#f1f5f1; --line:#dde6df; --muted:#53635a; --ink:#15241d;
+  --r-sheet:28px; --r-card:20px; --r-ctl:16px; --r-in:14px;
+  --sombra:0 1px 2px rgb(16 40 28/.06),0 10px 28px -18px rgb(16 40 28/.45);
+  --hair:inset 0 0 0 1px var(--line);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1512;--line:#2a3832;--sombra:0 1px 0 rgb(255 255 255/.03),0 14px 30px -18px rgb(0 0 0/.9)}}
+:root[data-theme="dark"]{--bg:#0f1512;--line:#2a3832;--sombra:0 1px 0 rgb(255 255 255/.03),0 14px 30px -18px rgb(0 0 0/.9)}
+body{font-feature-settings:"ss01" 1;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
+.wrap{gap:20px}
+
+/* Encabezado y pestañas */
+.brand h1{font-size:clamp(1.25rem,5.6vw,1.6rem);letter-spacing:-.02em}
+.brand .mode{font-weight:600}
+.tabs{background:color-mix(in srgb,var(--accent) 9%,var(--bg));border-radius:20px;padding:5px;gap:2px}
+.tabs button{color:var(--muted);font-weight:700;font-size:.8rem;border-radius:15px;min-height:58px;transition:background .2s,color .2s}
+.tabs button svg.i{width:23px;height:23px}
+.tabs button[aria-pressed="true"]{color:var(--accent);background:var(--surface);box-shadow:var(--sombra)}
+.tabs .badge{background:var(--p-now);color:var(--p-now-ink);box-shadow:0 0 0 2px var(--bg)}
+
+/* Títulos: Bricolage, apretado y con jerarquía clara */
+.progress h2,.done-card h2{font-size:clamp(1.85rem,8vw,2.2rem);letter-spacing:-.025em;line-height:1.05}
+.sheet h2{font-size:1.75rem;letter-spacing:-.02em}
+h3{font-weight:800;letter-spacing:-.01em}
+.progress .help,.lead{font-size:1.02rem;line-height:1.45;max-width:36ch}
+
+/* Etiquetas en minúsculas (antes en mayúsculas) */
+.count,.aitag,.ml-estado,.av-est,.cons-big span{text-transform:none;letter-spacing:0}
+.aitag{font-size:.92rem;font-weight:700}
+.count{font-size:.95rem}
+.av-est{font-size:.95rem;font-weight:700}
+.cons-big span{font-size:.9rem;font-weight:600;color:var(--muted)}
+
+/* Superficies: sin bordes duros; una sola sombra para lo que flota */
+.card{border:0;border-radius:var(--r-card);box-shadow:var(--hair);padding:20px}
+.card.ai{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ai) 30%,var(--line))}
+.card.big-action{transition:transform .15s}
+.card.big-action:active{transform:scale(.985)}
+.card.big-action .ico{border-radius:16px}
+.fact{border-radius:var(--r-in);background:color-mix(in srgb,var(--accent) 5%,var(--bg))}
+.notice{border-radius:var(--r-ctl)}
+
+/* Inventario y lista de compras: una sola lista agrupada, con separadores */
+#invlist,.inv:has(> .check){gap:0;background:var(--surface);border-radius:var(--r-card);box-shadow:var(--hair);overflow:hidden}
+#invlist>.item,.inv>.check{border:0;border-radius:0;box-shadow:none;background:transparent;padding:14px 16px;position:relative}
+#invlist>.item+.item::before,.inv>.check+.check::before{content:"";position:absolute;top:0;left:96px;right:0;height:1px;background:var(--line)}
+.inv>.check+.check::before{left:58px}
+#invlist>.empty{padding:22px}
+.item{border-left-width:1px}
+/* El estado se ve en un anillo alrededor de la foto */
+.thumb img{border-radius:16px;box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--line)}
+.item.ok .thumb img{box-shadow:0 0 0 3px var(--surface),0 0 0 5px color-mix(in srgb,var(--accent) 70%,transparent)}
+.item.low .thumb img{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--p-now)}
+.item.out .thumb img{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--bad)}
+.thumb,.thumb img{width:66px;height:66px}
+.thumb .spark{right:-7px;bottom:-7px}
+.info .n{font-family:var(--display);font-weight:800;font-size:1.12rem;letter-spacing:-.01em;line-height:1.2}
+.info .m{font-size:.86rem}
+.state{font-size:.84rem}
+/* Cantidad: el número grande, como etiqueta de despensa */
+.qty{font-size:2.1rem;letter-spacing:-.03em}
+.qty small{font-size:.72rem;font-weight:600;letter-spacing:0;margin-top:2px}
+.use{border:0;background:color-mix(in srgb,var(--accent) 11%,var(--surface));color:var(--accent);font-weight:800;font-size:.85rem;padding:8px 14px}
+.use:disabled{background:var(--bg);color:var(--muted)}
+.check{min-height:68px}
+.check .box{border-radius:10px}
+.check .qn{font-size:1.45rem;letter-spacing:-.02em}
+
+/* Controles */
+.btn{border-radius:var(--r-ctl);border-width:1px;font-weight:800;letter-spacing:-.005em;transition:transform .12s,filter .12s}
+.btn:active:not(:disabled){transform:scale(.98)}
+.btn.primary,.btn-casita{background:var(--btn-bg);border-color:var(--btn-bg);color:var(--btn-ink)}
+.btn.primary:active:not(:disabled){filter:brightness(.94)}
+.chip{border-width:1px;font-weight:700}
+.chip[aria-pressed="true"]{box-shadow:0 6px 14px -8px color-mix(in srgb,var(--accent) 80%,transparent)}
+.seg{background:color-mix(in srgb,var(--accent) 9%,var(--bg));border-radius:18px;padding:5px}
+.seg button{border-radius:13px;font-weight:700;color:var(--muted)}
+.seg button[aria-pressed="true"]{color:var(--ink);box-shadow:var(--sombra)}
+input[type=text],input[type=date],input[type=search],input[type=email],textarea,select{border-width:1px;border-radius:var(--r-in);background:var(--surface);box-shadow:inset 0 1px 2px rgb(16 40 28/.04)}
+input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+label,.lbl{font-size:.98rem}
+.stepper button{width:64px;height:64px;font-size:1.8rem}
+.stepper output{font-size:3.4rem;letter-spacing:-.04em}
+
+/* Barra inferior translúcida, como en iOS */
+.bar{background:color-mix(in srgb,var(--surface) 82%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(18px);backdrop-filter:saturate(1.6) blur(18px);border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.bar .btn{min-height:56px}
+
+/* Hojas que suben desde abajo */
+.sheet{border-radius:var(--r-sheet) var(--r-sheet) 0 0;box-shadow:0 -20px 40px -20px rgb(0 0 0/.35)}
+.sheet .grab{width:38px;height:5px;background:color-mix(in srgb,var(--ink) 18%,transparent)}
+.x,.iconbtn,.xbtn{background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.hero{border-radius:22px}
+
+/* Aviso de Consumo Inteligente: sin franja; el ícono amarillo marca la urgencia */
+.cons-aviso{border-left:0}
+.cons-aviso .ico{background:var(--p-now);color:var(--p-now-ink)}
+.cons-big{font-size:2.3rem;letter-spacing:-.03em}
+.cons-barra{height:12px;border:0;background:color-mix(in srgb,var(--accent) 10%,var(--bg))}
+
+/* Botón de Lilu y toasts */
+.toast{border-radius:18px;box-shadow:0 14px 30px -12px rgb(0 0 0/.45)}
+.fab.av-fab{box-shadow:0 12px 24px -10px rgb(60 40 140/.55)}
+
+/* Facturas: sin franjas laterales; el estado va en la etiqueta */
+.fac-row{border-left-width:0}
+.fac-hist{border:0;box-shadow:var(--hair);border-radius:var(--r-card)}
