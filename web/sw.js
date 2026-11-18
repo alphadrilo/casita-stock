@@ -1,11 +1,11 @@
 // Casita Stock — permite abrir la app sin conexión y cargarla rápido.
 // En cada publicación cambia VERSION aquí y el número ?v= en index.html y en la lista APP,
 // para que los teléfonos descarguen los archivos nuevos.
-const VERSION = "casita-v1.8.1";
+const VERSION = "casita-v1.9.0";
 const APP = [
-  "/", "/index.html", "/css/app.css?v=1.8.1",
-  "/js/config-nativo.js?v=1.8.1", "/js/voz.js?v=1.8.1", "/js/plataforma.js?v=1.8.1", "/js/consumo.js?v=1.8.1", "/js/app.js?v=1.8.1", "/js/asistente.js?v=1.8.1", "/js/facturas.js?v=1.8.1",
-  "/vendor/supabase-2.45.4.js", "/vendor/zxing-0.21.3.min.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/favicon.png", "/icons/icon-maskable-512.png", "/img/lilu-mujer.gif", "/img/lilu-hombre.gif",
+  "/", "/index.html", "/css/app.css?v=1.9.0",
+  "/js/config-nativo.js?v=1.9.0", "/js/voz.js?v=1.9.0", "/js/plataforma.js?v=1.9.0", "/js/consumo.js?v=1.9.0", "/js/app.js?v=1.9.0", "/js/asistente.js?v=1.9.0", "/js/facturas.js?v=1.9.0",
+  "/vendor/supabase-2.45.4.js", "/vendor/zxing-0.21.3.min.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/favicon.png", "/icons/icon-maskable-512.png", "/fonts/figtree-latin-400-normal.woff2", "/fonts/figtree-latin-500-normal.woff2", "/fonts/figtree-latin-600-normal.woff2", "/fonts/figtree-latin-700-normal.woff2", "/fonts/figtree-latin-800-normal.woff2", "/fonts/bricolage-grotesque-latin-600-normal.woff2", "/fonts/bricolage-grotesque-latin-800-normal.woff2", "/img/lilu-mujer.gif", "/img/lilu-hombre.gif",
 ];
 
 self.addEventListener("install", (e) => {
