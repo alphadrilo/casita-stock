@@ -575,3 +575,65 @@ label,.lbl{font-size:.98rem}
 /* Facturas: sin franjas laterales; el estado va en la etiqueta */
 .fac-row{border-left-width:0}
 .fac-hist{border:0;box-shadow:var(--hair);border-radius:var(--r-card)}
+
+/* ================================================================
+   2.0 — Memoria de Lilu y recomendaciones
+   ================================================================ */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Lo que recuerda */
+.mem-new{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--r-card,20px);background:var(--ai-soft)}
+.mem-new label{font-weight:700}
+.mem-new input{font-size:16px}
+.mem-amb{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:var(--r-ctl,16px);background:var(--surface);border:1px solid var(--line)}
+.mem-amb button{min-height:44px;border:0;border-radius:12px;background:none;color:var(--muted);font:700 .95rem var(--body);cursor:pointer}
+.mem-amb button[aria-checked="true"]{background:var(--ai);color:#fff}
+.mem-g h3{margin:6px 0 0;font:800 1.15rem var(--display)}
+.mem-g .hint{margin:2px 0 8px}
+.mem-l{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--r-card,20px);overflow:hidden;background:var(--surface)}
+.mem-it{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 12px 12px 16px;min-height:64px}
+.mem-it+.mem-it{border-top:1px solid var(--hair,var(--line))}
+.mem-it.off .mem-tx{color:var(--muted)}
+.mem-it.edit,.mem-it:has(.row){flex-direction:column;align-items:stretch}
+.mem-it textarea{font:16px/1.4 var(--body);width:100%;padding:10px 12px;border-radius:var(--r-in,14px);border:1px solid var(--line);background:var(--bg);color:var(--ink);resize:vertical}
+.mem-tx{flex:1 1 180px;min-width:0;line-height:1.35;overflow-wrap:anywhere}
+.mem-k{display:block;margin-top:3px;font-size:.82rem;color:var(--muted);font-weight:600}
+.mem-acc{display:flex;align-items:center;gap:2px;margin-left:auto}
+.mem-b{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:12px;background:none;color:var(--muted);cursor:pointer}
+.mem-b:active{background:var(--soft)}
+.mem-sw{width:52px;height:44px;border:0;background:none;padding:0;cursor:pointer;display:grid;place-items:center}
+.mem-sw span{width:44px;height:26px;border-radius:999px;background:var(--line);position:relative;transition:background .15s}
+.mem-sw span::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25);transition:transform .15s}
+.mem-sw[aria-checked="true"] span{background:var(--accent)}
+.mem-sw[aria-checked="true"] span::after{transform:translateX(18px)}
+.mem-vacio{margin:0;padding:14px 16px;border:1px dashed var(--line);border-radius:var(--r-card,20px);color:var(--muted)}
+.mem-todo{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:var(--r-ctl,16px);background:var(--bad-soft)}
+/* Tarjeta "¿Quieres que lo recuerde?" */
+.rec-card .rec-tx{margin:0;font:700 1.15rem/1.35 var(--body);color:var(--ink);overflow-wrap:anywhere}
+.rec-card .rec-tx.tach{text-decoration:line-through;text-decoration-color:var(--bad)}
+.rec-card .rec-antes{margin:0;color:var(--muted);text-decoration:line-through}
+.rec-fila{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0}
+.rec-fila+.rec-fila{border-top:1px solid var(--hair,var(--line))}
+.rec-fila .stepper.sm output{min-width:44px;font-size:1.1rem}
+/* Te recomiendo comprar */
+.reco-l{list-style:none;margin:0;padding:0}
+.reco-l li{display:flex;align-items:center;gap:12px;padding:12px 0}
+.reco-l li+li{border-top:1px solid var(--hair,var(--line))}
+.reco-tx{flex:1;min-width:0}
+.reco-q{color:var(--accent);font-weight:800;font-variant-numeric:tabular-nums}
+.reco-m{display:block;margin-top:3px;font-size:.9rem;line-height:1.35;color:var(--muted)}
+.reco-l .btn{flex:none;min-height:44px}
+.reco #recoall{align-self:flex-start}
+.rec-card .row .btn,.ml-card .row .btn{white-space:nowrap}
+.mem-it{display:grid;grid-template-columns:1fr auto;align-items:center}
+.mem-it.edit,.mem-it:has(.row){display:flex}
+.mem-acc{margin-left:0}
+.rec-fila{flex-wrap:wrap}
+.rec-fila>div:first-child{flex:1 1 100%}
+.rec-fila .hint{display:block;line-height:1.35;font-size:.9rem;margin-top:2px}
+.rec-fila .cq{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+@media (max-width:400px){
+  .mem-it{display:flex;flex-wrap:wrap;gap:2px 10px;padding-bottom:6px}
+  .mem-tx{flex:1 1 100%}
+  .mem-acc{margin-left:auto}
+}
+#view>section.card+section.card{margin-top:14px}
