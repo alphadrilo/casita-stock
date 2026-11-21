@@ -280,6 +280,20 @@
     };
   }
 
+  /* ---------------- Memoria de Lilu (tabla "memorias", con RLS por casa y por persona) ---------------- */
+  function hacerMemoria() {
+    const hid = hogar.id, yo = session.user.id;
+    const err = (e) => ({ code: e && (e.code === "42P01" || e.code === "PGRST205" || /memorias/.test(String(e.message || "")) && /exist|find|schema cache/i.test(String(e.message || ""))) ? "sin_tabla"
+      : /fetch|network|Failed/i.test(String(e && e.message)) ? "sin_red" : "error", message: e && e.message });
+    const fila = (r) => ({ id: r.id, texto: r.texto, tipo: r.tipo, ambito: r.ambito, activo: r.activo, mio: r.user_id === yo, autor: r.user_id, creado: r.creado, actualizado: r.actualizado });
+    return {
+      async listar() { const { data, error } = await sb.from("memorias").select("*").eq("hogar_id", hid).order("actualizado", { ascending: false }); if (error) throw err(error); return (data || []).map(fila); },
+      async crear({ texto, tipo, ambito }) { const { data, error } = await sb.from("memorias").insert({ hogar_id: hid, user_id: yo, texto, tipo, ambito }).select().single(); if (error) throw err(error); return fila(data); },
+      async cambiar(id, c) { const { data, error } = await sb.from("memorias").update({ ...c, actualizado: new Date().toISOString() }).eq("id", id).eq("hogar_id", hid).select().single(); if (error) throw err(error); return fila(data); },
+      async borrar(id) { const { error } = await sb.from("memorias").delete().eq("id", id).eq("hogar_id", hid); if (error) throw err(error); },
+    };
+  }
+
   /* ---------------- Personas ---------------- */
   function hacerUser() {
     return {
@@ -433,6 +447,7 @@
         <button class="check" id="a-hablar" aria-pressed="${c.hablar}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Contestar en voz alta</span><br><span class="cm">En “Voz y texto”, lee sus respuestas con la voz elegida. En “Solo voz” siempre habla.</span></span><span></span></button>
         <button class="check" id="a-cont" aria-pressed="${c.continuo}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Conversación continua</span><br><span class="cm">Después de responder, vuelve a escucharte. Di “gracias” para terminar.</span></span><span></span></button>
       </section>
+      ${window.Memoria ? Memoria.ajustesHTML() : ""}
       ${fam}
       <section class="card"><span class="aitag g">${ico("box")}Tus datos</span>
         <label class="btn sm" style="position:relative">${ico("plus")}Importar una copia (.json)<input type="file" id="a-imp" accept=".json,application/json" style="position:absolute;inset:0;opacity:0"></label>
@@ -441,7 +456,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 1.9${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.0${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
@@ -458,6 +473,7 @@
     $("#a-try").onclick = () => Voz.hablar(`Hola, soy ${Voz.nombre()}. ¿En qué te ayudo?`, true);
     const tog = (id, key) => { $(id).onclick = () => { const v = !Voz.cfg()[key]; Voz.guardar({ [key]: v }); $(id).setAttribute("aria-pressed", v); }; };
     tog("#a-hablar", "hablar"); tog("#a-cont", "continuo");
+    if (window.Memoria) Memoria.bindAjustes();
     document.querySelectorAll("[data-amod]").forEach((l) => { const elegir = () => { Voz.guardar({ modo: l.dataset.amod }); document.querySelectorAll("[data-amod]").forEach((x) => { const on = x === l; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); }); }; l.onclick = elegir; l.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); elegir(); } }; });
     if ($("#a-retry")) $("#a-retry").onclick = () => { S.del("cs-config"); location.reload(); };
     $("#a-imp").onchange = async (e) => {
@@ -532,7 +548,7 @@
     if (!hogar) await pasoHogar();
     if (!Voz.cfg().nombre) await pasoAsistente();
     sb.auth.onAuthStateChange((ev, s) => { if (s) session = s; if (ev === "SIGNED_OUT") location.reload(); });
-    caps = { db: hacerDb(), user: hacerUser(), sample: cfg.ia ? hacerSample() : null, downloads };
+    caps = { db: hacerDb(), user: hacerUser(), sample: cfg.ia ? hacerSample() : null, downloads, memoria: hacerMemoria() };
     cerrarGate(); listo();
     cargarMiembros().catch(() => {});
   }

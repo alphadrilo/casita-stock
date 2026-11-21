@@ -138,8 +138,94 @@ const ASST_TOOLS=()=>[
     execute(i){return stageChanges(i.cambios)}},
   {name:"pedir_producto_nuevo",description:"Cuando la persona compró algo que NO está en el inventario (buscar_productos no lo encontró): muestra una tarjeta que le pide escanear el código de barras o tomar una foto (o elegir 'No tiene código' para frutas, verduras o pan) y luego confirmar. NO guarda nada.",
     inputSchema:{type:"object",properties:{nombre:{type:"string"},dicho:{type:"string"},cantidad:{type:"number",description:"unidades sueltas"},paquetes:{type:"number",description:"cuántos paquetes o cartones compró, si lo dijo así"},unidadesPorPaquete:{type:"number",description:"cuántas unidades trae cada paquete (ej. 12 huevos), si lo dijo"},empaque:{type:"string",enum:EMPAQUES},unidad:{type:"string",description:"cómo se llama cada unidad, en singular (ej. huevo)"},precioPaquete:{type:"number"},marca:{type:"string"},tamano:{type:"string"},categoria:{type:"string",enum:CATS},ubicacion:{type:"string",enum:UBIS},tienda:{type:"string"},fecha:{type:"string"},precio:{type:"number"},vence:{type:"string"},minimo:{type:"number"}},required:["nombre"]},
-    execute(i){return stageNew(i)}}
+    execute(i){return stageNew(i)}},
+  ...(window.Memoria&&Memoria.activa()?[
+  {name:"proponer_recuerdo",description:"Muestra una tarjeta para que la persona confirme si quiere que recuerdes algo útil y duradero: una preferencia (le gusta la leche deslactosada), una marca o tienda favorita, una costumbre de consumo o una corrección. NO guarda nada hasta que diga sí. Para cambiar un recuerdo que ya existe pasa su id en reemplaza.",
+    inputSchema:{type:"object",properties:{texto:{type:"string",description:"una frase corta y clara, ej. Prefieren la leche deslactosada Alpina"},tipo:{type:"string",enum:["preferencia","marca","tienda","producto","habito","correccion","otro"]},ambito:{type:"string",enum:["personal","hogar"],description:"personal = solo para esta persona; hogar = para toda la casa (lo que compra o usa toda la familia)"},pedidoExplicito:{type:"boolean",description:"true solo si la persona dijo con sus palabras que lo recuerdes (recuerda que…, apúntate que…)"},reemplaza:{type:"string",description:"id del recuerdo que este corrige, si corrige uno"}},required:["texto","tipo","ambito"]},
+    execute(i){return stageRecuerdo({op:i.reemplaza?"corregir":"guardar",...i})}},
+  {name:"olvidar_recuerdo",description:"Muestra una tarjeta para borrar un recuerdo que la persona ya no quiere (por su id). NO borra nada hasta que diga sí.",
+    inputSchema:{type:"object",properties:{id:{type:"string"}},required:["id"]},
+    execute(i){return stageRecuerdo({op:"olvidar",id:String(i.id||"")})}}]:[]),
+  {name:"recomendar_compras",description:"Analiza el inventario y el historial de consumo de la casa (leídos ahora) y devuelve qué conviene comprar en los próximos días, con cantidad sugerida, marca y tienda que suelen usar, cuándo se acabaría y el motivo. No agrega nada.",
+    inputSchema:{type:"object",properties:{dias:{type:"number",description:"para cuántos días (por defecto 7)"}}},
+    async execute(i){await freshAll();const r=Recomendar.recomendaciones({dias:+i.dias>0?+i.dias:7});return r.length?{recomendaciones:r.map(({urgencia,...x})=>x)}:{recomendaciones:[],nota:"No hace falta comprar nada por ahora."}}},
+  {name:"proponer_lista",description:"Muestra una tarjeta para agregar productos a la lista de compras con el motivo de cada uno. NO agrega nada hasta que la persona diga sí. Usa ids de recomendar_compras o buscar_productos; para algo que no está en el inventario deja productoId vacío y pon el nombre.",
+    inputSchema:{type:"object",properties:{items:{type:"array",items:{type:"object",properties:{productoId:{type:"string"},nombre:{type:"string"},cantidad:{type:"number"},motivo:{type:"string",description:"por qué, en pocas palabras"}},required:["nombre"]}}},required:["items"]},
+    execute(i){return stageLista(i.items)}},
+  {name:"datos_para_recetas",description:"Devuelve la comida que hay en casa ahora (lo que vence antes primero) para sugerir recetas con lo disponible.",
+    inputSchema:{type:"object",properties:{}},
+    async execute(){await freshAll();return Recomendar.paraRecetas()}}
 ];
+/* ---- Tarjetas de recuerdos y de lista (2.0): nada se guarda sin un sí ---- */
+function stageRecuerdo(o){
+  if(!window.Memoria||!Memoria.activa())return "La memoria está apagada en Ajustes. No guardes recuerdos.";
+  if(o.op==="olvidar"){const m=Memoria.buscar(o.id);if(!m)return "Ese id de recuerdo no existe.";
+    insertCard({k:"recuerdo",id:uid(),op:"olvidar",memId:m.id,texto:m.texto,tipo:m.tipo,ambito:m.ambito,state:"pending",msg:""});
+    return `Mostré una tarjeta para olvidar "${m.texto}". Todavía NO está borrado: la persona debe decir sí.`}
+  const texto=String(o.texto||"").trim().replace(/\s+/g," ");const explicito=!!o.pedidoExplicito;
+  if(!explicito&&!Memoria.proponer())return "La persona apagó la opción de ofrecer recuerdos. Solo propón recordar algo si te lo pide con sus palabras.";
+  const r=Memoria.revisar(texto,{explicito});
+  if(!r.ok)return r.motivo==="nunca"?`No se puede guardar: ${r.aviso} Díselo con amabilidad.`:r.motivo==="delicado"?`No propongas guardarlo: es un tema personal (${r.tema}). Solo si la persona pide claramente que lo recuerdes.`:r.aviso;
+  const reem=o.reemplaza&&Memoria.buscar(o.reemplaza);
+  const igual=!reem&&Memoria.parecido(texto);if(igual&&igual.activo)return `Eso ya lo recuerdas: "${igual.texto}". No hace falta guardarlo otra vez.`;
+  insertCard({k:"recuerdo",id:uid(),op:reem?"corregir":"guardar",memId:reem?reem.id:"",antes:reem?reem.texto:"",texto,tipo:Memoria.TIPOS[o.tipo]?o.tipo:"otro",ambito:reem?reem.ambito:o.ambito==="hogar"?"hogar":"personal",explicito,state:"pending",msg:""});
+  return `Mostré una tarjeta: "${texto}" (${o.ambito==="hogar"?"para toda la casa":"solo para esta persona"}). Todavía NO está guardado: pregunta si quiere que lo recuerdes.`;
+}
+function stageLista(items){
+  const ids=new Set(inventory.map(p=>p.id));const rows=[];
+  for(const it of (Array.isArray(items)?items:[])){
+    const p=ids.has(String(it.productoId||""))?inventory.find(x=>x.id===it.productoId):null;
+    const nombre=p?p.nombre:cap(String(it.nombre||"").trim());if(!nombre||rows.some(r=>r.nombre===nombre))continue;
+    const en=lista.find(x=>((p&&x.productoId===p.id)||(!p&&norm(x.nombre)===norm(nombre)))&&!x.marcado);if(en)continue;
+    rows.push({key:uid(),productoId:p?p.id:"",nombre,cantidad:Math.max(1,Math.round(+it.cantidad||(p?recBuy(p):1))),motivo:String(it.motivo||"").trim().slice(0,240)});
+  }
+  if(!rows.length)return "No hay nada nuevo para agregar: ya está en la lista.";
+  insertCard({k:"lista",id:uid(),rows,state:"pending",msg:""});
+  return `Mostré una tarjeta para agregar a la lista: ${rows.map(r=>r.nombre+" ×"+r.cantidad).join(", ")}. Todavía NO se agregó: la persona debe decir sí.`;
+}
+async function saveRecuerdo(c){
+  if(!c||c.busy)return;c.busy=true;c.msg="";renderFeed();
+  try{
+    if(c.op==="olvidar"){const m=Memoria.buscar(c.memId);await Memoria.borrar(c.memId);c.copia=m;c.result=[`Olvidé: ${c.texto}`]}
+    else if(c.op==="corregir"){const m=Memoria.buscar(c.memId);await Memoria.cambiar(c.memId,{texto:c.texto,tipo:c.tipo,activo:true});c.copia=m;c.result=[`Ahora recuerdo: ${c.texto}`]}
+    else{const n=await Memoria.guardar({texto:c.texto,tipo:c.tipo,ambito:c.ambito,explicito:true});c.memId=n.id;c.result=[`Recordaré ${Memoria.textoAmbito(c.ambito)}: ${c.texto}`]}
+    c.state="saved";c.puedeDeshacer=true;marcarUltimo(c);
+    asst.feed.push({k:"note",text:"La persona confirmó. "+c.result[0]});toast(c.op==="olvidar"?"Recuerdo borrado":"Recuerdo guardado");
+  }catch(e){c.msg=e&&e.aviso?e.aviso:e&&e.code==="sin_tabla"?"Falta activar la memoria en Supabase (archivo memoria-asistente.sql).":"No se pudo guardar el recuerdo. Intenta otra vez."}
+  c.busy=false;renderFeed();
+}
+async function saveLista(c){
+  if(!c||c.busy)return;if(!canWrite){toast("No tienes permiso para cambiar esta lista.");return}
+  c.busy=true;c.msg="";renderFeed();
+  try{const h=await Recomendar.agregarALista(c.rows);c.hechos=h;c.state="saved";c.puedeDeshacer=h.length>0;
+    c.result=h.length?[`En tu lista: ${h.map(x=>x.nombre).join(", ")}`]:["Ya estaba todo en tu lista"];marcarUltimo(c);
+    asst.feed.push({k:"note",text:"La persona confirmó. "+c.result[0]});toast(h.length?(h.length===1?"Se agregó 1 producto a tu lista":`Se agregaron ${h.length} productos a tu lista`):"Ya estaba en tu lista");
+  }catch(e){writeErr(e)}
+  c.busy=false;renderFeed();
+}
+async function guardarCard(c){if(!c)return;if(c.k==="cambios")return saveCambios(c);if(c.k==="nuevo")return saveNew(c);if(c.k==="recuerdo")return saveRecuerdo(c);if(c.k==="lista")return saveLista(c)}
+function recuerdoHTML(c,ml){
+  const t=c.op==="olvidar"?"¿Olvido esto?":c.op==="corregir"?"¿Corrijo este recuerdo?":"¿Quieres que lo recuerde?";
+  if(c.state==="saved")return `<div class="ccard saved"><span class="aitag g">${icon("check")}${c.op==="olvidar"?"Olvidado":"Lo recordaré"}</span><span>${esc(c.result[0])}</span></div>`;
+  if(c.state==="cancelled")return `<div class="ccard off"><span class="hint">No se guardó el recuerdo</span></div>`;
+  if(c.state==="undone")return `<div class="ccard off"><span class="hint">Recuerdo deshecho</span></div>`;
+  return `<div class="${ml?"ml-card":"ccard"} rec-card"><span class="aitag">${icon("bulb")}${t}</span>
+    ${c.op==="corregir"?`<p class="rec-antes">${esc(c.antes)}</p>`:""}<p class="rec-tx${c.op==="olvidar"?" tach":""}">${esc(c.texto)}</p>
+    ${c.op==="olvidar"?"":c.op==="corregir"?`<span class="hint">${c.ambito==="hogar"?"Para toda la casa":"Solo para ti"}</span>`:`<div class="mem-amb" role="radiogroup" aria-label="Quién lo ve"><button type="button" role="radio" data-ramb="personal" data-c="${c.id}" aria-checked="${c.ambito!=="hogar"}">Solo para mí</button><button type="button" role="radio" data-ramb="hogar" data-c="${c.id}" aria-checked="${c.ambito==="hogar"}">Toda la casa</button></div>`}
+    ${ml?"":`<span class="hint">${c.op==="olvidar"?"Se borra para siempre.":"Puedes verlo, corregirlo o borrarlo en Ajustes → Memoria."}</span>`}
+    ${c.msg?`<div class="notice warn">${icon("alert")}<span>${esc(c.msg)}</span></div>`:""}
+    <div class="row"><button class="btn${ml?"":" sm"}" data-ccancel="${c.id}" style="flex:1">No</button><button class="btn${ml?"":" sm"} primary" data-gsave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Guardando…":c.op==="olvidar"?"Sí, olvídalo":"Sí, recuérdalo"}</button></div></div>`;
+}
+function listaHTML(c,ml){
+  if(c.state==="saved")return `<div class="ccard saved"><span class="aitag g">${icon("check")}Lista de compras</span><span>${esc(c.result[0])}</span></div>`;
+  if(c.state==="cancelled")return `<div class="ccard off"><span class="hint">No se agregó nada a la lista</span></div>`;
+  if(c.state==="undone")return `<div class="ccard off"><span class="hint">Se quitó de la lista</span></div>`;
+  return `<div class="${ml?"ml-card":"ccard"}"><span class="aitag">${icon("cart")}${c.rows.length>1?`¿Agrego estos ${c.rows.length} a tu lista?`:"¿Lo agrego a tu lista?"}</span>
+    ${c.rows.map(r=>`<div class="rec-fila"><div style="min-width:0"><b>${esc(r.nombre)}</b>${r.motivo?`<br><span class="hint">${esc(r.motivo)}</span>`:""}</div>
+      <div class="cq"><span class="stepper sm"><button data-lq="-1" data-c="${c.id}" data-r="${r.key}" aria-label="Menos">−</button><output>×${r.cantidad}</output><button data-lq="1" data-c="${c.id}" data-r="${r.key}" aria-label="Más">+</button></span>${c.rows.length>1?`<button class="xbtn" data-lrm="${r.key}" data-c="${c.id}" aria-label="Quitar ${esc(r.nombre)}">${icon("close")}</button>`:""}</div></div>`).join("")}
+    ${c.msg?`<div class="notice warn">${icon("alert")}<span>${esc(c.msg)}</span></div>`:""}
+    <div class="row"><button class="btn${ml?"":" sm"}" data-ccancel="${c.id}" style="flex:1">No</button><button class="btn${ml?"":" sm"} primary" data-gsave="${c.id}" style="flex:2" ${c.busy?"disabled":""}>${icon("check")}${c.busy?"Agregando…":"Sí, agrégalo"}</button></div></div>`;
+}
 const ASST_RULES=()=>`Eres ${Voz.nombre()}, el asistente por voz de Casita Stock, el inventario de una casa. Te llamas ${Voz.nombre()}; si la persona te llama por tu nombre, atiende lo que pide. Hoy es ${DIAS[new Date().getDay()]} ${today()}. Tiendas que usa la persona: ${JSON.stringify(stores())}.
 Reglas:
 - Antes de responder sobre cantidades, vencimientos o cualquier producto, consulta SIEMPRE la base de datos con buscar_productos, listar_productos o ver_producto. Nunca respondas de memoria ni con datos de mensajes anteriores: pueden haber cambiado. Si no aparece en los resultados, di que no está en el inventario.
@@ -150,7 +236,16 @@ Reglas:
 - Las cantidades del inventario son unidades sueltas (por ejemplo, huevos). Si la persona habla de cartones, cajas o paquetes, usa el campo "paquetes" y la app multiplica por "unidadesPorPaquete". Al responder cantidades, di las unidades y, si ayuda, cuántos paquetes son ("8 huevos, menos de un cartón"). Una docena son 12 unidades.
 - Singular, plural, diminutivos y errores de dictado son el mismo producto. Fechas relativas a AAAA-MM-DD. Si dice un precio total por varias unidades, divídelo.
 - Después de proponer cambios o un producto nuevo, termina preguntando si lo guardas: la persona puede decir “sí” o tocar Guardar.
+${reglasMemoria()}- Recomendaciones: para "¿qué compro?", "¿qué se va a acabar?" o "¿qué me recomiendas?" usa recomendar_compras y explica en pocas palabras el motivo de cada una (usa el campo motivo; si dice provisional, dilo). Ten en cuenta marcas, tiendas y cantidades que suelen comprar y lo que recuerdas. Para agregarlas a la lista usa proponer_lista y pregunta si las agrega; nunca digas que ya se agregaron. Para "¿qué cocino?" usa datos_para_recetas y sugiere 1 a 3 recetas sencillas con lo que hay, primero lo de usarPrimero, y di qué faltaría.
+- Tú no haces pedidos ni compras en tiendas o en línea, ni pagas nada. Si te lo piden, ofrece agregarlo a la lista de compras.
 - No escribas nada antes de usar las herramientas. Tu respuesta final: español sencillo, máximo 3 frases, sin markdown ni listas largas, porque puede leerse en voz alta.`;
+function reglasMemoria(){
+  if(!window.Memoria||!Memoria.activa())return "- La memoria está apagada: no ofrezcas recordar cosas.\n";
+  const m=Memoria.paraIA();
+  return `- Lo que recuerdas de esta casa (la persona lo confirmó; úsalo para personalizar tus respuestas y recomendaciones; si choca con el inventario, manda el inventario): ${m.length?JSON.stringify(m):"todavía nada"}.
+- Memoria: ${Memoria.proponer()?"si la persona dice una preferencia duradera (marca, tienda, cómo le gusta algo), una costumbre o te corrige, ofrece recordarlo con proponer_recuerdo (una frase corta). No lo ofrezcas para cosas de una sola vez.":"solo propón recordar algo si la persona te lo pide con sus palabras (pedidoExplicito true)."} Si dice "recuerda que…", usa proponer_recuerdo con pedidoExplicito true. Nunca guardes claves, PIN, tarjetas, cuentas ni documentos. Salud, religión, política, dinero personal o direcciones solo si lo pide explícitamente. Si una preferencia cambió, usa reemplaza con el id del recuerdo viejo; si pide olvidar algo, usa olvidar_recuerdo. Las conversaciones no se guardan; solo los recuerdos que confirma. Si pregunta qué recuerdas, díselo y cuéntale que puede verlos y borrarlos en Ajustes → Memoria.
+`;
+}
 function historialChat(){
   const out=[];
   for(const e of asst.feed.slice(-14)){
@@ -162,12 +257,15 @@ function historialChat(){
   return out;
 }
 async function toolAnswer(bot){
+  if(window.Memoria)await Memoria.asegurar();
   const r=await sample([{role:"user",content:ASST_RULES()},...historialChat()],{tools:ASST_TOOLS(),modelTier:"quick",signal:asst.ctl.signal,onText:({text})=>{bot.text=text;updBubble(bot)}});
   bot.text=r.text;
 }
 async function jsonAnswer(bot){
   const conv=historialChat().map(m=>(m.role==="user"?"Persona: ":"Asistente: ")+m.content).join("\n");
+  if(window.Memoria)await Memoria.asegurar();
   const r=await sample.json(`${ASST_RULES().split("Reglas:")[0]}
+${window.Memoria&&Memoria.activa()&&Memoria.paraIA().length?"Lo que recuerdas de esta casa (confirmado por la persona): "+JSON.stringify(Memoria.paraIA()):""}
 Inventario leído ahora de la base de datos (JSON): ${JSON.stringify((await freshAll()).map(compact))}
 Conversación:
 ${conv}
@@ -183,6 +281,11 @@ function localAnswer(text,bot){
   const t=plain(text);
   const q=t.match(/^(?:cuant[oa]s?|que tanto|hay)\s+(.+?)(?:\s+(?:hay|quedan?|tengo|tenemos|queda))?$/);
   if(q){const p=localMatch(q[1],true);bot.text=p?`Tienes ${qtyTxt(p)}${p.unidad?"":" de "+p.nombre}${enPaq(p)?` (${enPaq(p)})`:""}. ${status(p)[1]}.`:`No encontré "${q[1]}" en tu inventario.`;return}
+  const rq=t.match(/^(?:recuerda|recuerdalo|acuerdate|apunta|anota)(?: que| de que)?\s+(.{3,})$/);
+  if(rq&&window.Memoria&&Memoria.activa()){const orig=String(text).replace(/^\s*\S+(?:\s+(?:de\s+)?que)?\s+/i,"");const msg=stageRecuerdo({op:"guardar",texto:cap(orig),tipo:"preferencia",ambito:"personal",pedidoExplicito:true});bot.text=/NO está guardado/.test(msg)?"¿Quieres que lo recuerde? Di sí o no.":msg.replace(/ Díselo con amabilidad\./,"");bot.text+=" (La IA no está disponible, uso el modo básico.)";return}
+  if(/(recomienda|que compro|que deberia comprar|que se (me )?va a acabar|que se acaba)/.test(t)){const r=Recomendar.recomendaciones({dias:7}).filter(x=>!x.yaEnLista);
+    if(r.length){stageLista(r.map(x=>({productoId:x.productoId,nombre:x.nombre,cantidad:x.cantidad,motivo:x.motivo})));bot.text=`Te recomiendo comprar ${r.slice(0,4).map(x=>x.nombre).join(", ")}${r.length>4?" y más":""}. ¿Lo agrego a tu lista?`}else bot.text="Por ahora no hace falta comprar nada.";
+    bot.text+=" (La IA no está disponible, uso el modo básico.)";return}
   if(/(que (me )?falta|por comprar|lista)/.test(t)){const f=inventory.filter(needsBuy);bot.text=f.length?`Te falta: ${f.map(p=>p.nombre).join(", ")}.`:"No falta nada en casa.";return}
   if(/vence/.test(t)){const f=inventory.filter(useSoon);bot.text=f.length?`Vence pronto: ${f.map(p=>p.nombre+" ("+expInfo(p).text.toLowerCase()+")").join(", ")}.`:"Nada vence esta semana.";return}
   const rows=fallbackParse(text);
@@ -200,15 +303,17 @@ const RX_FIN=/^(gracias|muchas gracias|adios|eso es todo|nada mas|chao|hasta lue
 const RX_SINCOD=/no tiene codigo|sin codigo/;
 const RX_DESHACER=/^(deshacer|deshazlo|deshaz|deshacerlo|me equivoque|borra eso|quita eso)\b/;
 function sinNombre(t){const n=Voz.cfg().nombre;if(!n)return t;const r=new RegExp("^\\s*(?:oye|hola|hey|ey)?[\\s,]*"+n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"[\\s,.:!]*","i");return t.replace(r,"").trim()||t}
-const pendientes=()=>asst.feed.filter(e=>e.state==="pending"&&(e.k==="cambios"||e.k==="nuevo"));
+const pendientes=()=>asst.feed.filter(e=>e.state==="pending"&&["cambios","nuevo","recuerdo","lista"].includes(e.k));
 async function respuestaRapida(text,bot){
   const p=pendientes();const t=plain(text);
   if(p.length&&RX_SI.test(t)){
-    const listos=p.filter(c=>c.k==="cambios"||c.stage==="listo"),faltan=p.filter(c=>c.k==="nuevo"&&c.stage==="pedir");
-    for(const c of listos){if(c.k==="cambios")await saveCambios(c);else await saveNew(c)}
+    const listos=p.filter(c=>c.k!=="nuevo"||c.stage==="listo"),faltan=p.filter(c=>c.k==="nuevo"&&c.stage==="pedir");
+    for(const c of listos)await guardarCard(c);
     const ok=listos.filter(c=>c.state==="saved"),aun=listos.filter(c=>c.state==="pending");
-    let r=ok.length?"Listo, guardado.":"";
-    if(aun.length)r+=(r?" ":"")+"Alguien cambió el inventario mientras tanto. Revisa los números nuevos y dime sí otra vez.";
+    const soloRec=ok.length&&ok.every(c=>c.k==="recuerdo"),soloLista=ok.length&&ok.every(c=>c.k==="lista");
+    let r=ok.length?(soloRec?(ok[0].op==="olvidar"?"Listo, ya lo olvidé.":"Listo, lo recordaré."):soloLista?"Listo, está en tu lista.":"Listo, guardado."):"";
+    const fallo=listos.find(c=>c.state==="pending"&&c.msg&&(c.k==="recuerdo"||c.k==="lista"));if(fallo)r+=(r?" ":"")+fallo.msg;
+    if(aun.length&&!fallo)r+=(r?" ":"")+"Alguien cambió el inventario mientras tanto. Revisa los números nuevos y dime sí otra vez.";
     if(faltan.length)r+=(r?" ":"")+`Para ${faltan.map(c=>c.spec.nombre).join(" y ")} necesito que escanees el código, le tomes una foto o me digas “no tiene código”.`;
     bot.text=r||"No había nada para guardar.";return true;
   }
@@ -325,7 +430,7 @@ function renderStage(){
   if(pend.length){
     // La tarjeta se queda a la vista mientras escucha el "sí" o el "no"
     const pedir=pend.some(c=>c.k==="nuevo"&&c.stage==="pedir");
-    h=`<div class="ml-stage-top">${dicho}${pend.map(c=>c.k==="cambios"?mlCambios(c):cardHTML(c)).join("")}</div>
+    h=`<div class="ml-stage-top">${dicho}${pend.map(c=>c.k==="cambios"?mlCambios(c):cardHTML(c,true)).join("")}</div>
       ${asst.listening?orb("sm","mic","Terminar de hablar"):orb("sm quieto","mic","Hablar")}
       <span class="ml-estado">${asst.listening?(pedir?"Di “no tiene código” o usa los botones":"Di “sí” o “no”"):(pedir?"Escanea, toma una foto o di “no tiene código”":"Tócame y di “sí” o “no”, o usa los botones")}</span>
       ${asst.listening?`<p class="ml-dicho peq" id="mldicho">${esc(asst.parcial)}</p>`:""}`;
@@ -337,14 +442,14 @@ function renderStage(){
     h=`${dicho}<div class="av-wrap"><div class="orb av sm piensa" aria-hidden="true">${avImg()}</div><span class="av-est">Pensando…</span></div><p class="ml-resp" id="b-${lastBot?.id}">${esc(lastBot?.text||"")||"Déjame revisar…"}</p>
       <button class="btn sm" id="mlstop">${icon("close")}Detener</button>`;
   }else if(reciente){
-    h=U.state==="saved"?`<div class="orb ok" aria-hidden="true">${icon("check")}</div><p class="ml-resp">Listo, guardado</p>${(U.result||[]).map(t=>`<p class="ml-dicho peq">${esc(t)}.</p>`).join("")}
+    h=U.state==="saved"?`<div class="orb ok" aria-hidden="true">${icon("check")}</div><p class="ml-resp">${U.k==="recuerdo"?(U.op==="olvidar"?"Listo, lo olvidé":"Listo, lo recordaré"):U.k==="lista"?"Listo, en tu lista":"Listo, guardado"}</p>${(U.result||[]).map(t=>`<p class="ml-dicho peq">${esc(t)}.</p>`).join("")}
       ${U.puedeDeshacer?`<button class="btn sm" id="mlundo">${icon("back")}Deshacer</button>`:""}${orb("sm quieto","mic","Hablar")}<p class="ml-nota">¿Algo más? Di “gracias” para terminar.</p>`
-      :`<div class="orb sm" aria-hidden="true">${icon("back")}</div><p class="ml-resp">Lo deshice</p><p class="ml-dicho peq">Tu inventario quedó como antes.</p>${orb("sm quieto","mic","Hablar")}`;
+      :`<div class="orb sm" aria-hidden="true">${icon("back")}</div><p class="ml-resp">Lo deshice</p><p class="ml-dicho peq">${U.k==="recuerdo"?"La memoria quedó como antes.":U.k==="lista"?"Tu lista quedó como antes.":"Tu inventario quedó como antes."}</p>${orb("sm quieto","mic","Hablar")}`;
   }else if(lastBot&&lastBot.text){
     h=`${dicho}${orb("quieto","mic","Hablar")}<p class="ml-resp" id="b-${lastBot.id}">${esc(lastBot.text)}</p>`;
   }else{
     h=`${orb("quieto","mic","Hablar")}<p class="ml-resp">Hola, soy ${esc(Voz.nombre())}</p><p class="ml-dicho peq">Tócame y dime qué compraste, qué usaste o pregúntame cuánto queda.</p>
-      <div class="chips" style="justify-content:center">${["¿Cuánta leche queda?","¿Qué me falta comprar?","¿Qué vence pronto?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
+      <div class="chips" style="justify-content:center">${["¿Qué me recomiendas comprar?","¿Qué cocino hoy?","¿Qué vence pronto?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
   }
   S.innerHTML=h;
   // Un toque = una acción: se ignora un segundo toque en menos de medio segundo (toques dobles o "fantasma")
@@ -360,10 +465,12 @@ function actualizarNombreAsistente(){
 window.actualizarNombreAsistente=actualizarNombreAsistente;
 $("#fab").onclick=()=>openAsst(null,{escuchar:true});
 actualizarNombreAsistente();
-Plataforma.ready.then(()=>{actualizarNombreAsistente();if(new URLSearchParams(location.search).has("hablar"))setTimeout(()=>openAsst(null,{escuchar:"auto"}),300)});
+Plataforma.ready.then(()=>{actualizarNombreAsistente();if(window.Memoria)Memoria.recargar();if(new URLSearchParams(location.search).has("hablar"))setTimeout(()=>openAsst(null,{escuchar:"auto"}),300)});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&asst.open)closeAsst()});
 
-function cardHTML(c){
+function cardHTML(c,ml){
+  if(c.k==="recuerdo")return recuerdoHTML(c,ml);
+  if(c.k==="lista")return listaHTML(c,ml);
   if(c.k==="cambios"){
     if(c.state==="saved")return `<div class="ccard saved"><span class="aitag g">${icon("check")}Guardado</span>${c.result.map(t=>`<span>${esc(t)}</span>`).join("")}</div>`;
     if(c.state==="cancelled")return `<div class="ccard off"><span class="hint">Cambios cancelados</span></div>`;
@@ -400,7 +507,7 @@ function renderFeed(){
   const f=$("#afeed");if(!f)return;
   if(!asst.feed.length){
     f.innerHTML=`<div class="msg bot">Hola, soy ${esc(Voz.nombre())}. Toca el micrófono y pregúntame cuánto hay de algo, dime qué compraste o usaste, o pregúntame qué falta y qué vence. Todo lo reviso en tu inventario antes de responder.</div>
-      <div class="chips">${["¿Cuánta leche queda?","Compré 2 leches en el supermercado","Se acabó el detergente","¿Qué me falta comprar?","¿Qué vence pronto?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
+      <div class="chips">${["¿Cuánta leche queda?","Compré 2 leches en el supermercado","Se acabó el detergente","¿Qué me recomiendas comprar?","¿Qué cocino con lo que hay?"].map(q=>`<button class="chip q sm" data-aq="${esc(q)}">${q}</button>`).join("")}</div>`;
   }else f.innerHTML=asst.feed.filter(e=>e.k!=="note").map(e=>e.k==="me"?`<div class="msg me">${esc(e.text)}</div>`:e.k==="bot"?`<div class="msg bot" id="b-${e.id}">${e.pending&&!e.text?"Revisando tu inventario…":esc(e.text)}</div>`:cardHTML(e)).join("");
   const sb=$("#asend");if(sb){sb.innerHTML=asst.busy?"Detener":icon("send");sb.setAttribute("aria-label",asst.busy?"Detener":"Enviar")}
   bindFeed();f.scrollTop=f.scrollHeight;
@@ -420,6 +527,10 @@ function bindFeed(){
   $$("[data-nq]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);if(!c)return;c.spec.pq=0;c.spec.cantidad=Math.max(1,c.spec.cantidad+(+b.dataset.nq));renderFeed()});
   $$("[data-npp]").forEach(i=>i.onchange=e=>{const c=cardById(i.dataset.npp);if(!c)return;const S=c.spec;const n=Math.max(1,parseInt(e.target.value.replace(/\D/g,""))||1);S.pp=n;S.empaque=n>1?(S.empaque&&S.empaque!=="Suelto"?S.empaque:"Paquete"):"Suelto";if(S.pq)S.cantidad=S.pq*n;renderFeed()});
   $$("[data-nsave]").forEach(b=>b.onclick=async()=>{const c=cardById(b.dataset.nsave);await saveNew(c);trasGuardarPorToque(c)});
+  $$("[data-gsave]").forEach(b=>b.onclick=async()=>{const c=cardById(b.dataset.gsave);await guardarCard(c);trasGuardarPorToque(c)});
+  $$("[data-ramb]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);if(c){c.ambito=b.dataset.ramb;renderFeed()}});
+  $$("[data-lq]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);const r=c&&c.rows.find(x=>x.key===b.dataset.r);if(!r)return;r.cantidad=Math.max(1,r.cantidad+(+b.dataset.lq));renderFeed()});
+  $$("[data-lrm]").forEach(b=>b.onclick=()=>{const c=cardById(b.dataset.c);if(!c)return;c.rows=c.rows.filter(x=>x.key!==b.dataset.lrm);if(!c.rows.length)c.state="cancelled";renderFeed()});
 }
 async function saveCambios(c){
   if(!c||c.busy||!canWrite){if(!canWrite)toast("No tienes permiso para cambiar este inventario.");return}
@@ -494,7 +605,17 @@ async function saveNew(c){
 function marcarUltimo(c){const m=[...asst.feed].reverse().find(e=>e.k==="me");c.trasMe=m?m.id:null;asst.ultimo=c}
 function trasGuardarPorToque(c){if(!c||c.state!=="saved"||!asst.open||!modoVoz())return;Voz.hablar("Listo, guardado.",true).then(()=>{if(asst.open&&Voz.cfg().continuo&&!asst.busy&&!asst.listening&&!pendientes().length)escucharTurno(true)})}
 async function deshacer(c,porVoz){
-  if(!c||c.state!=="saved"||!c.puedeDeshacer||!canWrite)return false;
+  if(!c||c.state!=="saved"||!c.puedeDeshacer)return false;
+  if(c.k==="recuerdo"||c.k==="lista"){
+    try{
+      if(c.k==="lista"){if(!canWrite)return false;await Recomendar.deshacerLista(c.hechos||[])}
+      else if(c.op==="guardar")await Memoria.borrar(c.memId);
+      else if(c.op==="corregir"&&c.copia)await Memoria.cambiar(c.memId,{texto:c.copia.texto,tipo:c.copia.tipo,activo:c.copia.activo});
+      else if(c.op==="olvidar"&&c.copia){const n=await Memoria.guardar({texto:c.copia.texto,tipo:c.copia.tipo,ambito:c.copia.ambito,explicito:true});c.memId=n.id}
+      c.state="undone";c.puedeDeshacer=false;asst.feed.push({k:"note",text:"La persona deshizo lo último."});if(!porVoz)toast("Deshecho");renderFeed();return true;
+    }catch(e){writeErr(e);return false}
+  }
+  if(!canWrite)return false;
   // Solo si nadie cambió esos productos después de guardar
   for(const d of c.despues||[]){const f=await freshOne(d.id);if(!f||f.cantidad!==d.cantidad)return false}
   try{

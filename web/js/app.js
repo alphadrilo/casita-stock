@@ -1049,8 +1049,9 @@ function renderAI(v,bar){
         <button class="btn aib" id="openasst">${icon("mic")}Hablar con ${esc(Voz.nombre())}</button>
       </section>`;
   }
-  v.innerHTML=aiBlock+gastos+`<section class="card"><span class="aitag g">${icon("users")}En familia</span><p class="lead">Invita a tu familia desde Ajustes (el engranaje de arriba) con el código de tu casa. Todos verán el mismo inventario y la misma lista, y en cada producto verás quién compró o usó.</p></section>`;
+  v.innerHTML=recoHTML()+aiBlock+memCardHTML()+gastos+`<section class="card"><span class="aitag g">${icon("users")}En familia</span><p class="lead">Invita a tu familia desde Ajustes (el engranaje de arriba) con el código de tu casa. Todos verán el mismo inventario y la misma lista, y en cada producto verás quién compró o usó.</p></section>`;
   if($("#analyze"))$("#analyze").onclick=analyze;
+  bindReco();if($("#vermem"))$("#vermem").onclick=()=>Memoria.abrir();
   if($("#gohist"))$("#gohist").onclick=()=>openScreen("hist","ai");
   if($("#addAll"))$("#addAll").onclick=async()=>{const items=(analysis.comprar||[]);let n=0;
     try{await Promise.all(items.map(c=>{const p=inventory.find(x=>norm(x.nombre)===norm(c.producto));n++;const qn=Math.max(1,parseInt(c.cantidad)||1);
@@ -1059,6 +1060,36 @@ function renderAI(v,bar){
   $$("[data-q]").forEach(b=>b.onclick=()=>openAsst(b.dataset.q));
   if($("#openasst"))$("#openasst").onclick=()=>openAsst(null,{escuchar:true});
 }
+
+/* ---- Recomendaciones con datos reales y memoria (2.0) ---- */
+let recoTodo=false;
+function recoHTML(){
+  if(typeof Recomendar==="undefined"||!inventory.length)return"";
+  const all=Recomendar.recomendaciones({dias:7,max:20}),r=all.filter(x=>!x.yaEnLista),ya=all.length-r.length;
+  const vis=recoTodo?r:r.slice(0,4);
+  return `<section class="card reco"><span class="aitag g">${icon("cart")}Te recomiendo comprar</span>
+    ${r.length?`<p class="hint" style="margin:0">Según lo que tienes y cómo lo usan en casa. Nada se agrega sin que toques.</p>
+      <ul class="reco-l">${vis.map(x=>`<li><div class="reco-tx"><b>${esc(x.nombre)}</b> <span class="reco-q">×${x.cantidad}</span><span class="reco-m">${esc(x.motivo)}</span></div>
+        ${canWrite?`<button class="btn sm" data-reco="${esc(x.productoId)}" aria-label="Agregar ${esc(x.nombre)} a la lista">${icon("plus")}Agregar</button>`:""}</li>`).join("")}</ul>
+      ${r.length>4?`<button class="linkbtn" id="recomas">${recoTodo?"Ver menos":`Ver ${r.length-4} más`}</button>`:""}
+      ${canWrite&&r.length>1?`<button class="btn sm primary" id="recoall">${icon("plus")}Agregar ${r.length===vis.length?"todo":`los ${r.length}`} a mi lista</button>`:""}`
+    :`<p class="lead" style="margin:0">${ya?"Lo que hace falta ya está en tu lista.":"Por ahora no hace falta comprar nada esta semana."}</p>`}
+  </section>`;
+}
+function bindReco(){
+  const add=async(items)=>{try{const h=await Recomendar.agregarALista(items);toast(h.length===1?`${h[0].nombre} está en tu lista`:`${plural(h.length,"producto")} en tu lista`,h.length?()=>Recomendar.deshacerLista(h):null)}catch(e){writeErr(e)}};
+  $$("[data-reco]").forEach(b=>b.onclick=()=>{const x=Recomendar.recomendaciones({dias:7,max:20}).find(y=>y.productoId===b.dataset.reco);if(x)add([x])});
+  if($("#recoall"))$("#recoall").onclick=()=>add(Recomendar.recomendaciones({dias:7,max:20}).filter(x=>!x.yaEnLista));
+  if($("#recomas"))$("#recomas").onclick=()=>{recoTodo=!recoTodo;render()};
+}
+function memCardHTML(){
+  if(typeof Memoria==="undefined")return"";
+  const n=Memoria.lista().filter(m=>m.activo).length,on=Memoria.activa();
+  return `<section class="card ai"><span class="aitag">${icon("bulb")}Lo que ${esc(Voz.nombre())} recuerda</span>
+    <p class="lead" style="margin:0">${!on?"La memoria está apagada. Puedes encenderla en Ajustes.":n?`Recuerda <b id="memn">${plural(n,"cosa")}</b> de tu casa, como tus marcas y tiendas. Solo lo que tú confirmaste.`:`Todavía no recuerda nada. Dile, por ejemplo, “recuerda que la leche la compramos deslactosada”.`}</p>
+    <button class="btn sm" id="vermem">${icon("list")}Ver y corregir</button></section>`;
+}
+window.addEventListener("cs-memoria",()=>{if(tab==="ai"&&!screen&&loaded&&!document.getElementById("mem-host")?.innerHTML)render()});
 
 /* ================= Pestañas ================= */
 $("#tab-add").onclick=()=>{if(step===5)reset();if(screen==="hecho"&&screenTab==="add")screen=null;go("add")};

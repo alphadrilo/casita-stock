@@ -6,7 +6,7 @@ window.Voz = (() => {
   const NAT = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition;
   let pararNativo = null;
   const KEY = "cs-asistente";
-  const DEF = { nombre: "", voz: "", idioma: "es-US", hablar: true, continuo: true, modo: "voz", personaje: "" }; // personaje: "mujer" | "hombre" ("" = según la voz) // modo: "voz" (manos libres) | "texto" (chat completo)
+  const DEF = { nombre: "", voz: "", idioma: "es-US", hablar: true, continuo: true, modo: "voz", personaje: "", memoria: true, proponerRecuerdos: true }; // personaje: "mujer" | "hombre" ("" = según la voz) // modo: "voz" (manos libres) | "texto" (chat completo)
   let rec = null, escuchando = false, hablando = false, turnoHabla = 0;
 
   function cfg() { try { return { ...DEF, ...(JSON.parse(localStorage.getItem(KEY) || "{}")) }; } catch (e) { return { ...DEF }; } }
