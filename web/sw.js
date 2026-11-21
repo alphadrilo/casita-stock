@@ -1,10 +1,10 @@
 // Casita Stock — permite abrir la app sin conexión y cargarla rápido.
 // En cada publicación cambia VERSION aquí y el número ?v= en index.html y en la lista APP,
 // para que los teléfonos descarguen los archivos nuevos.
-const VERSION = "casita-v1.9.0";
+const VERSION = "casita-v2.0.0";
 const APP = [
-  "/", "/index.html", "/css/app.css?v=1.9.0",
-  "/js/config-nativo.js?v=1.9.0", "/js/voz.js?v=1.9.0", "/js/plataforma.js?v=1.9.0", "/js/consumo.js?v=1.9.0", "/js/app.js?v=1.9.0", "/js/asistente.js?v=1.9.0", "/js/facturas.js?v=1.9.0",
+  "/", "/index.html", "/css/app.css?v=2.0.0",
+  "/js/config-nativo.js?v=2.0.0", "/js/voz.js?v=2.0.0", "/js/plataforma.js?v=2.0.0", "/js/consumo.js?v=2.0.0", "/js/app.js?v=2.0.0", "/js/memoria.js?v=2.0.0", "/js/recomendar.js?v=2.0.0", "/js/asistente.js?v=2.0.0", "/js/facturas.js?v=2.0.0",
   "/vendor/supabase-2.45.4.js", "/vendor/zxing-0.21.3.min.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/favicon.png", "/icons/icon-maskable-512.png", "/fonts/figtree-latin-400-normal.woff2", "/fonts/figtree-latin-500-normal.woff2", "/fonts/figtree-latin-600-normal.woff2", "/fonts/figtree-latin-700-normal.woff2", "/fonts/figtree-latin-800-normal.woff2", "/fonts/bricolage-grotesque-latin-600-normal.woff2", "/fonts/bricolage-grotesque-latin-800-normal.woff2", "/img/lilu-mujer.gif", "/img/lilu-hombre.gif",
 ];
 
