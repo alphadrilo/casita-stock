@@ -653,3 +653,63 @@ label,.lbl{font-size:.98rem}
 .av-hora select{font-size:16px;min-height:44px;padding:0 12px;border-radius:var(--r-in,14px);border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .av-prox{margin:0;padding:12px 14px;border-radius:var(--r-ctl,16px);background:var(--soft);font-size:.95rem;line-height:1.4}
 .av-prox b{display:block}
+
+/* ================================================================
+   2.2 — Presupuesto del mes
+   ================================================================ */
+.pres,.pres-vacio{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:var(--r-ctl,16px);background:var(--bg);border:1px solid var(--line)}
+.pres-top{display:flex;justify-content:space-between;align-items:baseline;font-weight:700}
+.pres-pct{font:800 1.6rem var(--display);font-variant-numeric:tabular-nums;color:var(--accent)}
+.pres.cerca .pres-pct{color:var(--warn)}.pres.pasado .pres-pct{color:var(--bad)}
+.pres-bar{position:relative;height:12px;border-radius:999px;background:var(--line);overflow:visible}
+.pres-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--accent)}
+.pres.cerca .pres-bar i{background:var(--warn)}.pres.pasado .pres-bar i{background:var(--bad)}
+.pres-bar b{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--ink);opacity:.35;border-radius:2px}
+.pres-txt{margin:0;line-height:1.4}
+.pres .linkbtn{align-self:flex-start}
+.pres-in{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-in,14px);padding:0 14px;background:var(--surface)}
+.pres-in span{font:800 1.4rem var(--display);color:var(--muted)}
+.pres-in input{border:0;background:none;font:800 1.6rem var(--display);min-height:56px;width:100%;color:var(--ink);outline:none;padding:0}
+.pres-in:focus-within{border-color:var(--accent)}
+.pres-lista{display:flex;gap:8px;align-items:flex-start;margin:0;padding:10px 12px;border-radius:var(--r-ctl,16px);background:var(--soft);font-size:.95rem;line-height:1.4}
+.pres-lista svg{flex:none;margin-top:2px}
+.pres-lista.cerca{background:var(--warn-soft)}.pres-lista.pasado{background:var(--bad-soft)}
+.pres-in input,.pres-in input:focus{border:0!important;box-shadow:none!important;background:transparent!important;border-radius:0}
+
+/* 2.2 — Modo supermercado */
+.smk{display:flex;flex-direction:column;gap:14px}
+.sm-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;background:var(--bg)}
+.sm-tot{display:flex;flex-direction:column;align-items:flex-end;text-align:right}
+.sm-tot span{font:800 2.2rem/1 var(--display);font-variant-numeric:tabular-nums;color:var(--ink)}
+.sm-tot small{color:var(--muted);font-size:.9rem;margin-top:4px}
+.sm-pres{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:var(--r-ctl,16px);background:var(--soft);font-size:.95rem}
+.sm-pres.cerca{background:var(--warn-soft)}.sm-pres.pasado{background:var(--bad-soft)}
+.sm-pres .pres-bar i{background:var(--accent)}.sm-pres.cerca .pres-bar i{background:var(--warn)}.sm-pres.pasado .pres-bar i{background:var(--bad)}
+.sm-oye{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--r-ctl,16px);background:var(--ai-soft);font-weight:700}
+.sm-oye .dot{width:12px;height:12px;border-radius:50%;background:var(--ai);animation:respira 1.2s ease-in-out infinite}
+.sm-ult{margin:0}
+.sm-g h3{display:flex;justify-content:space-between;margin:0 0 8px;font:800 1.1rem var(--display)}
+.sm-g h3 span{color:var(--muted);font:700 .9rem var(--body)}
+.sm-l{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--r-card,20px);background:var(--surface);overflow:hidden}
+.sm-it{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 10px 8px 6px}
+.sm-it+.sm-it{border-top:1px solid var(--hair,var(--line))}
+.sm-check{flex:1 1 160px;min-width:0;display:flex;align-items:center;gap:12px;min-height:64px;padding:6px 8px;border:0;background:none;text-align:left;color:var(--ink);cursor:pointer;font:inherit}
+.sm-check .box{flex:none;width:34px;height:34px;border-radius:10px;border:2px solid var(--line);display:grid;place-items:center;color:transparent}
+.sm-check[aria-pressed="true"] .box{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.sm-n{display:flex;flex-direction:column;min-width:0}
+.sm-n b{font-size:1.15rem;overflow-wrap:anywhere}
+.sm-n span{color:var(--muted);font-size:.92rem}
+.sm-it.on .sm-n b{text-decoration:line-through;text-decoration-color:var(--accent);color:var(--muted)}
+.sm-acc{display:flex;align-items:center;gap:6px;margin-left:auto}
+.sm-pr{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font:800 1.1rem var(--display);color:var(--accent);cursor:pointer}
+.sm-precio{flex:1 1 100%;display:flex;align-items:center;gap:8px;padding:4px 8px 6px 54px;flex-wrap:wrap}
+.sm-precio label{font-weight:700;font-size:.95rem}
+.sm-precio input{flex:1;min-width:90px;font-size:16px;min-height:44px;padding:0 12px;border-radius:var(--r-in,14px);border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.sm-bar{display:flex;gap:10px;align-items:center;width:100%}
+.sm-bar .btn{flex:1}
+.sm-mic{flex:none;width:56px;height:56px;border-radius:50%;border:0;background:var(--ai);color:#fff;display:grid;place-items:center;cursor:pointer}
+.sm-mic.oye{box-shadow:0 0 0 6px var(--ai-soft)}
+.sm-mic svg{width:26px;height:26px}
+@media (max-width:360px){.sm-precio{padding-left:8px}.sm-tot span{font-size:1.8rem}}
+.sm-head .btn{flex-direction:row}
+body.sm-on .fab{display:none}
