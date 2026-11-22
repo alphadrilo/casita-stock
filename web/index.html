@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/bricolage-grotesque-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/app.css?v=2.0.0">
+<link rel="stylesheet" href="/css/app.css?v=2.1.0">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -36,6 +36,7 @@
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5z"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
   <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
@@ -78,15 +79,16 @@
 <div class="gate" id="gate"><div class="gate-in"><div class="loading"><div class="thinking"><i></i><i></i><i></i></div>Abriendo Casita Stock…</div></div></div>
 <script src="/vendor/supabase-2.45.4.js"></script>
 <script src="/vendor/zxing-0.21.3.min.js"></script>
-<script src="/js/config-nativo.js?v=2.0.0"></script>
-<script src="/js/voz.js?v=2.0.0"></script>
-<script src="/js/plataforma.js?v=2.0.0"></script>
-<script src="/js/consumo.js?v=2.0.0"></script>
-<script src="/js/app.js?v=2.0.0"></script>
-<script src="/js/memoria.js?v=2.0.0"></script>
-<script src="/js/recomendar.js?v=2.0.0"></script>
-<script src="/js/asistente.js?v=2.0.0"></script>
-<script src="/js/facturas.js?v=2.0.0"></script>
+<script src="/js/config-nativo.js?v=2.1.0"></script>
+<script src="/js/voz.js?v=2.1.0"></script>
+<script src="/js/plataforma.js?v=2.1.0"></script>
+<script src="/js/consumo.js?v=2.1.0"></script>
+<script src="/js/app.js?v=2.1.0"></script>
+<script src="/js/memoria.js?v=2.1.0"></script>
+<script src="/js/recomendar.js?v=2.1.0"></script>
+<script src="/js/avisos.js?v=2.1.0"></script>
+<script src="/js/asistente.js?v=2.1.0"></script>
+<script src="/js/facturas.js?v=2.1.0"></script>
 <script>
 if ("serviceWorker" in navigator && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 </script>
