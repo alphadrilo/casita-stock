@@ -447,6 +447,7 @@
         <button class="check" id="a-hablar" aria-pressed="${c.hablar}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Contestar en voz alta</span><br><span class="cm">En “Voz y texto”, lee sus respuestas con la voz elegida. En “Solo voz” siempre habla.</span></span><span></span></button>
         <button class="check" id="a-cont" aria-pressed="${c.continuo}"><span class="box">${ico("check")}</span><span><span class="cn" style="text-decoration:none;color:var(--ink)">Conversación continua</span><br><span class="cm">Después de responder, vuelve a escucharte. Di “gracias” para terminar.</span></span><span></span></button>
       </section>
+      ${window.Avisos ? `<div id="av-host">${Avisos.ajustesHTML()}</div>` : ""}
       ${window.Memoria ? Memoria.ajustesHTML() : ""}
       ${fam}
       <section class="card"><span class="aitag g">${ico("box")}Tus datos</span>
@@ -456,7 +457,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.0${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.1${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
@@ -474,6 +475,7 @@
     const tog = (id, key) => { $(id).onclick = () => { const v = !Voz.cfg()[key]; Voz.guardar({ [key]: v }); $(id).setAttribute("aria-pressed", v); }; };
     tog("#a-hablar", "hablar"); tog("#a-cont", "continuo");
     if (window.Memoria) Memoria.bindAjustes();
+    if (window.Avisos) { const pintarAvisos = () => { const h = $("#av-host"); if (h) { h.innerHTML = Avisos.ajustesHTML(); Avisos.bindAjustes(pintarAvisos); } }; Avisos.leerEstado().then(pintarAvisos); }
     document.querySelectorAll("[data-amod]").forEach((l) => { const elegir = () => { Voz.guardar({ modo: l.dataset.amod }); document.querySelectorAll("[data-amod]").forEach((x) => { const on = x === l; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); }); }; l.onclick = elegir; l.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); elegir(); } }; });
     if ($("#a-retry")) $("#a-retry").onclick = () => { S.del("cs-config"); location.reload(); };
     $("#a-imp").onchange = async (e) => {

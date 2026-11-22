@@ -271,7 +271,7 @@ function header(){
 
 function render(){
   ["add","inv","list","ai"].forEach(t=>$("#tab-"+t).setAttribute("aria-pressed",tab===t));
-  header();
+  header();if(window.Avisos)Avisos.reprogramar();
   const v=$("#view"), bar=$("#bar");
   if(screen&&tab===screenTab){if(screen==="lote")return renderLote(v,bar);if(screen==="review")return renderReview(v,bar);if(screen==="hecho")return renderDone(v,bar);
     if(screen==="factura")return renderFactura(v,bar);if(screen==="facrev")return renderFacRev(v,bar);if(screen==="hist")return renderHist(v,bar)}
@@ -937,6 +937,17 @@ async function toggleNeeded(p){
   const id="p_"+p.id;const ex=lista.find(x=>x.id===id);
   try{if(ex)await store.set("lista",id,{...ex,marcado:!ex.marcado});else await store.set("lista",id,{productoId:p.id,nombre:p.nombre,cantidad:recBuy(p),marcado:true,creado:Date.now(),u:me||""})}catch(e){writeErr(e)}
 }
+/* ---- Lista por tienda y por pasillo (2.1) ---- */
+const PASILLOS=["Frutas y verduras","Panadería","Carnes","Lácteos","Congelados","Despensa","Bebidas","Limpieza","Higiene","Mascotas","Otros"];
+const PALABRAS=[[/pan\b|arepa|tortilla|galleta|ponqu/,"Panadería"],[/leche|queso|yogur|mantequilla|crema|kumis|huevo/,"Lácteos"],[/pollo|carne|res\b|cerdo|pescado|jam[oó]n|salchich|chorizo|at[uú]n fresco/,"Carnes"],[/tomate|papa|cebolla|lim[oó]n|banan|pl[aá]tano|manzana|fruta|verdura|lechuga|zanahoria|aguacate|naranja|fresa/,"Frutas y verduras"],[/helado|congelad/,"Congelados"],[/agua|jugo|gaseosa|soda|cerveza|vino|caf[eé]|t[eé]\b/,"Bebidas"],[/jab[oó]n de ropa|detergente|cloro|lavaloza|limpia|desinfect|esponja|suavizante|bolsa/,"Limpieza"],[/papel higi|champ[uú]|shampoo|crema dental|pasta dental|desodorante|jab[oó]n|toalla|pa[nñ]al|cepillo/,"Higiene"],[/perro|gato|mascota|concentrado/,"Mascotas"],[/arroz|frijol|lenteja|aceite|az[uú]car|sal\b|harina|pasta|at[uú]n|enlatad|salsa|cereal|avena/,"Despensa"]];
+const catDe=(nombre)=>{const n=norm(nombre);for(const[re,c]of PALABRAS)if(re.test(n))return c;return "Otros"};
+let tiendaLista=(()=>{try{return localStorage.getItem("cs-lista-tienda")||""}catch(e){return ""}})();
+const tiendasLista=()=>{const c={};inventory.forEach(p=>(p.historial||[]).forEach(h=>{if(h.t==="c"&&h.s)c[h.s]=(c[h.s]||0)+1}));return Object.entries(c).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).slice(0,6)};
+/* Último precio por unidad de un producto en una tienda, y la tienda más barata */
+function preciosDe(p){const m={};(p.historial||[]).filter(h=>h.t==="c"&&h.s&&h.p!=null&&isFinite(+h.p)).forEach(h=>{m[h.s]={p:+h.p,f:h.f||""}});return m}
+function precioEn(p,t){const m=preciosDe(p);if(t&&m[t])return m[t].p;if(!t&&p.precio!=null)return +p.precio;return null}
+function masBarato(p,t){const m=preciosDe(p),aqui=t&&m[t]?m[t].p:null;let mejor=null;for(const[k,v]of Object.entries(m))if(k!==t&&(!mejor||v.p<mejor.p))mejor={t:k,p:v.p};return mejor&&aqui!=null&&mejor.p<aqui*0.95?mejor:null}
+
 function renderList(v,bar){
   bar.innerHTML="";
   if(!loaded){v.innerHTML=`<div class="loading"><div class="thinking"><i></i><i></i><i></i></div>Cargando tu lista…</div>`;return}
@@ -944,8 +955,19 @@ function renderList(v,bar){
   const fromP=lista.filter(x=>x.productoId), manual=lista.filter(x=>!x.productoId);
   const checked=listaChecked();
   const all=auto.length+lista.length;
+  /* Cada cosa de la lista con su sección del supermercado */
+  const filas=[...fromP.map(e=>{const p=inventory.find(x=>x.id===e.productoId);return p?{p,e,cat:p.categoria||catDe(p.nombre),on:!!e.marcado,n:p.nombre}:{m:{...e,productoId:""},cat:catDe(e.nombre),on:!!e.marcado,n:e.nombre}}),
+    ...auto.map(p=>({p,e:null,cat:p.categoria||catDe(p.nombre),on:false,n:p.nombre})),...manual.map(e=>({m:e,cat:catDe(e.nombre),on:!!e.marcado,n:e.nombre}))];
+  const cuanto=f=>f.p?(f.e?f.e.cantidad:recBuy(f.p)):(f.m.cantidad||1);
+  const tiendaHTML=()=>{const ts=tiendasLista();if(!ts.length)return"";if(tiendaLista&&!ts.includes(tiendaLista))ts.unshift(tiendaLista);
+    const pend=filas.filter(f=>!f.on&&f.p);let tot=0,con=0;pend.forEach(f=>{const pr=precioEn(f.p,tiendaLista)??precioEn(f.p,"");if(pr!=null){tot+=pr*cuanto(f);con++}});
+    return `<div class="tienda-sel"><span class="lbl">${icon("cart")}¿Dónde vas a comprar?</span>
+      <div class="chips scroll" role="radiogroup" aria-label="Tienda"><button class="chip" role="radio" data-tienda="" aria-checked="${!tiendaLista}">Cualquier tienda</button>${ts.map(t=>`<button class="chip" role="radio" data-tienda="${esc(t)}" aria-checked="${tiendaLista===t}">${esc(t)}</button>`).join("")}</div>
+      ${con?`<p class="hint tot">${tiendaLista?`Total aproximado en ${esc(tiendaLista)}`:"Total aproximado"}: <b>${money(Math.round(tot*100)/100)}</b>${con<pend.length+filas.filter(f=>!f.on&&!f.p).length?` · ${con} de ${pend.length+filas.filter(f=>!f.on&&!f.p).length} con precio`:""}</p>`:""}</div>`};
+  const gruposHTML=()=>PASILLOS.map(c=>{const fs=filas.filter(f=>(PASILLOS.includes(f.cat)?f.cat:"Otros")===c).sort((a,b)=>a.on-b.on||a.n.localeCompare(b.n));
+    return fs.length?`<div class="field pasillo"><span class="lbl">${esc(c)}<span class="pc">${fs.filter(f=>!f.on).length||"✓"}</span></span><div class="inv">${fs.map(f=>f.p?rowP(f.p,f.e):rowM(f.m)).join("")}</div></div>`:""}).join("");
   const rowP=(p,entry)=>{const on=!!(entry&&entry.marcado);const pp=ppOf(p);const un=entry?entry.cantidad:recBuy(p);const qn=pp>1?`${Math.max(1,Math.ceil(un/pp))} ${empN(p,Math.max(1,Math.ceil(un/pp)))}`:un;const[s]=status(p);
-    return `<div class="rowx"><button class="check" aria-pressed="${on}" data-tp="${p.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(p.nombre)}</span><br><span class="cm">${s==="out"?"Se acabó":`Te ${p.cantidad===1?"queda":"quedan"} ${esc(qtyTxt(p))}`}${p.tienda?` · ${esc(p.tienda)}`:""}${p.precio!=null?` · ${money(p.precio*pp)}${pp>1?" c/"+esc(emp(p)):""}`:""}</span></span><span class="qn">×${qn}</span></button>
+    return `<div class="rowx"><button class="check" aria-pressed="${on}" data-tp="${p.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(p.nombre)}</span><br><span class="cm">${s==="out"?"Se acabó":`Te ${p.cantidad===1?"queda":"quedan"} ${esc(qtyTxt(p))}`}${tiendaLista?(()=>{const pr=precioEn(p,tiendaLista),mb=masBarato(p,tiendaLista);return `${pr!=null?` · ${money(pr*pp)}${pp>1?" c/"+esc(emp(p)):""} aquí`:" · sin precio aquí"}${mb?`<span class="mb">Más barato en ${esc(mb.t)}: ${money(mb.p*pp)}</span>`:""}`})():`${p.tienda?` · ${esc(p.tienda)}`:""}${p.precio!=null?` · ${money(p.precio*pp)}${pp>1?" c/"+esc(emp(p)):""}`:""}`}</span></span><span class="qn">×${qn}</span></button>
       ${entry?`<button class="xbtn" data-rl="${entry.id}" aria-label="Quitar de la lista">${icon("close")}</button>`:""}</div>`};
   const rowM=e=>`<div class="rowx"><button class="check" aria-pressed="${!!e.marcado}" data-tm="${e.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(e.nombre)}</span><br><span class="cm">Agregado a mano<span data-uid="${esc(e.u||"")}"></span></span></span><span class="qn">×${e.cantidad||1}</span></button>
       <button class="xbtn" data-rl="${e.id}" aria-label="Quitar de la lista">${icon("close")}</button></div>`;
@@ -953,9 +975,7 @@ function renderList(v,bar){
       <p class="summary-line">${all?`Tienes <b>${plural(all,"cosa")}</b> en la lista.${checked.length?` Ya marcaste <b>${checked.length}</b>.`:""}`:"Tu lista está vacía. No falta nada en casa."}</p>
       ${canWrite?`<div class="inline"><input type="text" id="addm" placeholder="Agregar algo, ej. pan" aria-label="Agregar a la lista"><button class="btn sm" id="addmb">${icon("plus")}Agregar</button></div>`:""}
     </section>
-    ${auto.length||fromP.length?`<div class="field"><span class="lbl">${icon("alert")}Lo que se acaba en casa</span><div class="inv">
-      ${fromP.map(e=>{const p=inventory.find(x=>x.id===e.productoId);return p?rowP(p,e):rowM({...e,productoId:""})}).join("")}${auto.map(p=>rowP(p,null)).join("")}</div></div>`:""}
-    ${manual.length?`<div class="field"><span class="lbl">${icon("list")}Agregado por ti</span><div class="inv">${manual.map(rowM).join("")}</div></div>`:""}
+    ${all?tiendaHTML()+gruposHTML():""}
     ${aiState==="ready"&&inventory.length?`<button class="card big-action" id="aiList"><span class="ico" style="background:var(--ai-soft);color:var(--ai)">${icon("spark")}</span><span><b>¿Se me olvida algo?</b><span>La IA revisa tu consumo y te dice qué más deberías comprar.</span></span></button>`:""}
     ${canWrite?`<button class="card big-action" id="lfac"><span class="ico">${icon("receipt")}</span><span><b>¿Ya compraste? Escanea la factura</b><span>La IA suma al inventario todo lo de la factura.</span></span></button>`:""}
     <button class="btn sm" id="lhist" style="align-self:flex-start">${icon("list")}Historial de compras y gastos</button>
@@ -971,6 +991,7 @@ function renderList(v,bar){
   $$("[data-tm]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.tm);if(!e||!canWrite)return;try{await store.set("lista",e.id,{...e,marcado:!e.marcado})}catch(err){writeErr(err)}});
   $$("[data-rl]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.rl);if(!e)return;const copy={...e};try{await store.del("lista",e.id);toast(`${e.nombre} salió de la lista`,()=>store.set("lista",copy.id,copy))}catch(err){writeErr(err)}});
   bindAvisos();
+  $$("[data-tienda]").forEach(b=>b.onclick=()=>{tiendaLista=b.dataset.tienda;try{localStorage.setItem("cs-lista-tienda",tiendaLista)}catch(e){}render()});
   if($("#aiList"))$("#aiList").onclick=()=>{openAsst("Revisa mi inventario y mi consumo. ¿Qué más debería comprar esta semana que no esté ya en mi lista? La lista tiene: "+[...lista.map(x=>x.nombre),...auto.map(p=>p.nombre)].join(", "))};
   fillNames();
   if(canWrite)bar.innerHTML=`<button class="btn primary" id="finish" ${checked.length?"":"disabled"}>${icon("check")}${checked.length?`Terminé de comprar (${checked.length})`:"Marca lo que compraste"}</button>`;
