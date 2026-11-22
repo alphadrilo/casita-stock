@@ -83,8 +83,8 @@ const recPacks=p=>Math.max(1,Math.ceil(recBuy(p)/ppOf(p)));
 /* ================= Datos: base de datos de la página o este navegador ================= */
 const CATALOG={"7702001041474":{nombre:"Café molido",marca:"Sello Rojo",categoria:"Despensa",tamano:"500 g"}};
 let db=null, users=null, me=null, mode="loading", loaded=false, fresh=false, offline=false, canWrite=true;
-let inventory=[], lista=[], analysis=null, compras=[];
-const K={p:"cs5-productos",l:"cs5-lista",a:"cs5-analisis",m:"cs5-mirror",c:"cs5-compras"};
+let inventory=[], lista=[], analysis=null, compras=[], presupuesto=null;
+const K={p:"cs5-productos",l:"cs5-lista",a:"cs5-analisis",m:"cs5-mirror",c:"cs5-compras",pr:"cs5-presupuesto"};
 /* Colecciones locales (modo demo / sin nube) */
 const LOCAL_COL={productos:()=>[inventory,v=>inventory=v,K.p],lista:()=>[lista,v=>lista=v,K.l],compras:()=>[compras,v=>compras=v,K.c]};
 const LOCAL_EXAMPLES=()=>[
@@ -104,6 +104,7 @@ const store={
     const [arr,setArr,key]=LOCAL_COL[col]();const nv=arr.filter(x=>x.id!==id);setArr(nv);LS.set(key,nv);
     onData();
   },
+  async savePresupuesto(b){presupuesto=b;if(mode==="db"){if(b)await db.doc("ajustes/presupuesto").set(JSON.parse(JSON.stringify(b)));else await db.doc("ajustes/presupuesto").delete()}else LS.set(K.pr,b);mirrorSave();onData()},
   async saveAnalysis(a){analysis=a;if(mode==="db"){try{await db.doc("ajustes/analisis").set(JSON.parse(JSON.stringify(a)))}catch(e){}}else LS.set(K.a,a)}
 };
 const saveP=p=>store.set("productos",p.id,p);
@@ -116,16 +117,17 @@ const writeErr=e=>{if(e&&e.code==="check_violation")toast("Falta actualizar la b
   if(db){
     mode="db";
     const mirror=LS.get(K.m,null);
-    if(mirror){inventory=mirror.p||[];lista=mirror.l||[];analysis=mirror.a||null;compras=mirror.c||[];loaded=true;onData()}
+    if(mirror){inventory=mirror.p||[];lista=mirror.l||[];analysis=mirror.a||null;compras=mirror.c||[];presupuesto=mirror.pr||null;loaded=true;onData()}
     setTimeout(()=>{if(!fresh&&mode==="db"){offline=true;onData()}},8000);
-    const fail=()=>{if(!fresh){mode="local";inventory=LS.get(K.p,null)||LOCAL_EXAMPLES();lista=LS.get(K.l,[]);analysis=LS.get(K.a,null);compras=LS.get(K.c,[]);loaded=true;onData()}};
+    const fail=()=>{if(!fresh){mode="local";inventory=LS.get(K.p,null)||LOCAL_EXAMPLES();lista=LS.get(K.l,[]);analysis=LS.get(K.a,null);compras=LS.get(K.c,[]);presupuesto=LS.get(K.pr,null);loaded=true;onData()}};
     db.collection("productos").onSnapshot(s=>{inventory=s.docs.map(d=>({...d.data(),id:d.id}));loaded=true;fresh=true;mirrorSave();onData()},fail);
     db.collection("lista").onSnapshot(s=>{lista=s.docs.map(d=>({...d.data(),id:d.id}));mirrorSave();onData()},()=>{});
     db.collection("compras").onSnapshot(s=>{compras=s.docs.map(d=>({...d.data(),id:d.id}));mirrorSave();onData()},()=>{});
+    db.doc("ajustes/presupuesto").onSnapshot(s=>{presupuesto=s.exists?s.data():null;mirrorSave();onData()},()=>{});
     db.doc("ajustes/analisis").onSnapshot(s=>{analysis=s.exists?s.data():null;mirrorSave();if(tab==="ai"&&analysisState!=="busy")render()},()=>{});
-  }else{mode="local";inventory=LS.get(K.p,null)||LOCAL_EXAMPLES();lista=LS.get(K.l,[]);analysis=LS.get(K.a,null);compras=LS.get(K.c,[]);loaded=true;fresh=true;onData()}
+  }else{mode="local";inventory=LS.get(K.p,null)||LOCAL_EXAMPLES();lista=LS.get(K.l,[]);analysis=LS.get(K.a,null);compras=LS.get(K.c,[]);presupuesto=LS.get(K.pr,null);loaded=true;fresh=true;onData()}
 })();
-function mirrorSave(){LS.set(K.m,{p:inventory,l:lista,a:analysis,c:compras})}
+function mirrorSave(){LS.set(K.m,{p:inventory,l:lista,a:analysis,c:compras,pr:presupuesto})}
 
 /* Nombres de quién compró o usó (familia) */
 const names={};
@@ -271,10 +273,10 @@ function header(){
 
 function render(){
   ["add","inv","list","ai"].forEach(t=>$("#tab-"+t).setAttribute("aria-pressed",tab===t));
-  header();if(window.Avisos)Avisos.reprogramar();
+  header();if(window.Avisos)Avisos.reprogramar();document.body.classList.toggle("sm-on",screen==="super"&&tab===screenTab);
   const v=$("#view"), bar=$("#bar");
   if(screen&&tab===screenTab){if(screen==="lote")return renderLote(v,bar);if(screen==="review")return renderReview(v,bar);if(screen==="hecho")return renderDone(v,bar);
-    if(screen==="factura")return renderFactura(v,bar);if(screen==="facrev")return renderFacRev(v,bar);if(screen==="hist")return renderHist(v,bar)}
+    if(screen==="factura")return renderFactura(v,bar);if(screen==="facrev")return renderFacRev(v,bar);if(screen==="hist")return renderHist(v,bar);if(screen==="super"&&window.Super)return Super.renderSuper(v,bar)}
   if(tab==="inv")return renderInv(v,bar);
   if(tab==="list")return renderList(v,bar);
   if(tab==="ai")return renderAI(v,bar);
@@ -975,7 +977,8 @@ function renderList(v,bar){
       <p class="summary-line">${all?`Tienes <b>${plural(all,"cosa")}</b> en la lista.${checked.length?` Ya marcaste <b>${checked.length}</b>.`:""}`:"Tu lista está vacía. No falta nada en casa."}</p>
       ${canWrite?`<div class="inline"><input type="text" id="addm" placeholder="Agregar algo, ej. pan" aria-label="Agregar a la lista"><button class="btn sm" id="addmb">${icon("plus")}Agregar</button></div>`:""}
     </section>
-    ${all?tiendaHTML()+gruposHTML():""}
+    ${all&&canWrite&&window.Super?`<button class="card big-action sm-start" id="gosuper"><span class="ico">${icon("cart")}</span><span><b>Estoy en el supermercado</b><span>Pantalla grande para marcar lo que metes, con el total en vivo. También por voz.</span></span></button>`:""}
+    ${all?tiendaHTML()+(window.Presupuesto?Presupuesto.listaHTML(tiendaLista):"")+gruposHTML():""}
     ${aiState==="ready"&&inventory.length?`<button class="card big-action" id="aiList"><span class="ico" style="background:var(--ai-soft);color:var(--ai)">${icon("spark")}</span><span><b>¿Se me olvida algo?</b><span>La IA revisa tu consumo y te dice qué más deberías comprar.</span></span></button>`:""}
     ${canWrite?`<button class="card big-action" id="lfac"><span class="ico">${icon("receipt")}</span><span><b>¿Ya compraste? Escanea la factura</b><span>La IA suma al inventario todo lo de la factura.</span></span></button>`:""}
     <button class="btn sm" id="lhist" style="align-self:flex-start">${icon("list")}Historial de compras y gastos</button>
@@ -991,6 +994,7 @@ function renderList(v,bar){
   $$("[data-tm]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.tm);if(!e||!canWrite)return;try{await store.set("lista",e.id,{...e,marcado:!e.marcado})}catch(err){writeErr(err)}});
   $$("[data-rl]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.rl);if(!e)return;const copy={...e};try{await store.del("lista",e.id);toast(`${e.nombre} salió de la lista`,()=>store.set("lista",copy.id,copy))}catch(err){writeErr(err)}});
   bindAvisos();
+  if($("#gosuper"))$("#gosuper").onclick=()=>Super.abrir();
   $$("[data-tienda]").forEach(b=>b.onclick=()=>{tiendaLista=b.dataset.tienda;try{localStorage.setItem("cs-lista-tienda",tiendaLista)}catch(e){}render()});
   if($("#aiList"))$("#aiList").onclick=()=>{openAsst("Revisa mi inventario y mi consumo. ¿Qué más debería comprar esta semana que no esté ya en mi lista? La lista tiene: "+[...lista.map(x=>x.nombre),...auto.map(p=>p.nombre)].join(", "))};
   fillNames();
@@ -1034,6 +1038,7 @@ function renderAI(v,bar){
   if(!loaded){v.innerHTML=`<div class="loading"><div class="thinking"><i></i><i></i><i></i></div>Preparando el asistente…</div>`;return}
   const sp=spending();
   const gastos=`<section class="card"><span class="aitag g">${icon("money")}Tus gastos</span>
+    ${window.Presupuesto?Presupuesto.tarjetaHTML():""}
     ${sp.any?`<div><div class="big-num">${money(sp.tm)}</div><p class="lead">gastado este mes${sp.tl?` · el mes pasado: ${money(sp.tl)}`:""}</p></div>
       ${sp.cat.length?`<div class="bars">${sp.cat.slice(0,6).map(([c,val])=>`<div class="barrow"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${Math.max(4,val/sp.cat[0][1]*100)}%"></div></div><span class="v">${money(val)}</span></div>`).join("")}</div>`:""}
       ${sp.ups.length?`<div class="field"><span class="lbl">Subieron de precio</span><ul class="list">${sp.ups.slice(0,4).map(u=>`<li><span class="ico w">${icon("up")}</span><div><b>${esc(u.n)}</b><span>De ${money(u.a)} a ${money(u.b)}</span></div></li>`).join("")}</ul></div>`:""}`
@@ -1072,7 +1077,7 @@ function renderAI(v,bar){
   }
   v.innerHTML=recoHTML()+aiBlock+memCardHTML()+gastos+`<section class="card"><span class="aitag g">${icon("users")}En familia</span><p class="lead">Invita a tu familia desde Ajustes (el engranaje de arriba) con el código de tu casa. Todos verán el mismo inventario y la misma lista, y en cada producto verás quién compró o usó.</p></section>`;
   if($("#analyze"))$("#analyze").onclick=analyze;
-  bindReco();if($("#vermem"))$("#vermem").onclick=()=>Memoria.abrir();
+  bindReco();if(window.Presupuesto)Presupuesto.bind();if($("#vermem"))$("#vermem").onclick=()=>Memoria.abrir();
   if($("#gohist"))$("#gohist").onclick=()=>openScreen("hist","ai");
   if($("#addAll"))$("#addAll").onclick=async()=>{const items=(analysis.comprar||[]);let n=0;
     try{await Promise.all(items.map(c=>{const p=inventory.find(x=>norm(x.nombre)===norm(c.producto));n++;const qn=Math.max(1,parseInt(c.cantidad)||1);

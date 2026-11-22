@@ -63,7 +63,8 @@ const Avisos = (() => {
   /* ---------- Programar ---------- */
   async function aplicar() {
     const c = cfg(), badge = pendientesLista();
-    const avisos = c.activo ? plan(c).map((a) => ({ ...a, insignia: badge })) : [];
+    const pres = c.activo && window.Presupuesto ? Presupuesto.avisoIPhone() : null;
+    const avisos = c.activo ? [...plan(c), ...(pres && pres.fecha > Date.now() ? [pres] : [])].map((a) => ({ ...a, insignia: badge })) : [];
     const f = JSON.stringify([c, avisos.map((a) => [a.id, a.fecha, a.texto]), badge]);
     if (f === firma) return; firma = f;
     const n = N();
@@ -143,7 +144,7 @@ const Avisos = (() => {
   function iniciar() {
     leerEstado().then(() => reprogramar(500));
     const n = N();
-    if (n && n.addListener) n.addListener("avisoTocado", (d) => { try { if (typeof tab !== "undefined") { tab = d && d.abrir === "inv" ? "inv" : "list"; if (typeof screen !== "undefined") screen = null; render(); } } catch (e) {} });
+    if (n && n.addListener) n.addListener("avisoTocado", (d) => { try { if (typeof tab !== "undefined") { tab = d && ["inv", "ai"].includes(d.abrir) ? d.abrir : "list"; if (typeof screen !== "undefined") screen = null; render(); } } catch (e) {} });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) leerEstado().then(() => { firma = ""; reprogramar(300); }); });
   }
 
