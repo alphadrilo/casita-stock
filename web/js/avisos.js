@@ -95,7 +95,7 @@ const Avisos = (() => {
     const n = N(); if (!n) return false;
     if (permiso !== "si" && (await pedirPermiso()) !== "si") return false;
     const m = mensaje(delDia(0, { ...cfg(), acaba: true, vence: true })) || { titulo: "Casita Stock", texto: "Así te llegarán los avisos de lo que se acaba y lo que vence.", abrir: "list" };
-    await n.programar({ avisos: [...plan().map((a) => ({ ...a, insignia: pendientesLista() })), { id: "prueba", fecha: Date.now() + 5000, ...m }] });
+    await n.programar({ avisos: [...plan().map((a) => ({ ...a, insignia: pendientesLista() })), { id: "prueba", fecha: Date.now() + 10000, ...m }] });
     firma = ""; return true;
   }
 
@@ -136,7 +136,7 @@ const Avisos = (() => {
     if ($a("#av-h")) $a("#av-h").onchange = (e) => { guardar({ hora: e.target.value }); repintar(); };
     if ($a("#av-ac")) $a("#av-ac").onclick = () => { guardar({ acaba: !cfg().acaba }); repintar(); };
     if ($a("#av-ve")) $a("#av-ve").onclick = () => { guardar({ vence: !cfg().vence }); repintar(); };
-    if ($a("#av-prueba")) $a("#av-prueba").onclick = async () => { toast((await probar()) ? "En 5 segundos te llega un aviso de prueba" : "El iPhone no dio permiso para avisos"); };
+    if ($a("#av-prueba")) $a("#av-prueba").onclick = async () => { toast((await probar()) ? "En 10 segundos te llega un aviso de prueba. Sal de la app para verlo" : "El iPhone no dio permiso para avisos"); };
   }
 
   /* ---------- Inicio ---------- */
