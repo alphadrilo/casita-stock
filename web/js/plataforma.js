@@ -386,6 +386,9 @@
     }
     function parse(t) {
       try { return JSON.parse(t); } catch (e) {}
+      // Arreglos comunes: comas sobrantes antes de } o ], y comillas tipográficas
+      const limpio = String(t).replace(/[\u201c\u201d]/g, '"').replace(/,\s*([}\]])/g, "$1");
+      if (limpio !== t) { try { return parse(limpio); } catch (e) {} }
       const m = t.match(/```(?:json)?\s*([\s\S]*?)```/); if (m) { try { return JSON.parse(m[1]); } catch (e) {} }
       const ia = [t.indexOf("{"), t.indexOf("[")].filter((i) => i >= 0); const a = ia.length ? Math.min(...ia) : -1;
       const b = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
@@ -395,9 +398,16 @@
     sample.json = async (input, opts = {}) => {
       const extra = "\n\nResponde únicamente con el JSON pedido, sin texto antes ni después.";
       const inp = typeof input === "string" ? input + extra : input.map((m, i) => i === input.length - 1 ? { ...m, content: m.content + extra } : m);
-      const r = await sample(inp, { ...opts, json: true });
-      if (r.truncated) throw { code: "invalid_json", message: "Respuesta incompleta", text: r.text };
-      return parse(r.text);
+      // Si la respuesta se corta o no es JSON válido, se pide una vez más, más corta y con más espacio.
+      const pedir = async (inp2, o) => { const r = await sample(inp2, o); if (r.truncated) throw { code: "invalid_json", message: "Respuesta incompleta", text: r.text }; return parse(r.text); };
+      const o1 = { ...opts, json: true, maxTokens: opts.maxTokens || 4000 };
+      try { return await pedir(inp, o1); }
+      catch (e) {
+        if (!e || e.code !== "invalid_json" || (opts.signal && opts.signal.aborted)) throw e;
+        const corto = "\n\nTu respuesta anterior se cortó o no era JSON válido. Responde de nuevo SOLO con el JSON, con frases más cortas y sin comillas dentro del texto.";
+        const inp2 = typeof inp === "string" ? inp + corto : inp.map((m, i) => i === inp.length - 1 ? { ...m, content: m.content + corto } : m);
+        return pedir(inp2, { ...o1, maxTokens: Math.min(8000, (o1.maxTokens || 4000) * 2), cache: false });
+      }
     };
     sample.limits = async () => ({ maxPromptBytes: 262144, images: { maxCount: 20, maxInputBytes: 20e6, mediaTypes: ["image/jpeg", "image/png", "image/webp", "image/gif"] }, documents: { mediaTypes: ["application/pdf"], maxBytes: 3e6 }, maxBodyBytes: 4.2e6, tools: { maxCount: 10 } });
     return sample;
@@ -457,7 +467,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.2${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.2.1${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
