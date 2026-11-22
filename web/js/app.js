@@ -223,9 +223,16 @@ const findDup=()=>draft.existenteId?inventory.find(p=>p.id===draft.existenteId):
 const listaChecked=()=>lista.filter(x=>x.marcado);
 const listaNeeded=()=>{const ids=new Set(lista.filter(x=>x.productoId).map(x=>x.productoId));return inventory.filter(p=>needsBuy(p)&&!ids.has(p.id))};
 
+window.addEventListener("cs-pendientes",()=>{if(loaded)onData()});
+window.addEventListener("offline",()=>{if(loaded){onData();toast("Sin conexión. Puedes seguir: tus cambios se guardan en el teléfono.")}});
+window.addEventListener("online",()=>{if(loaded)onData()});
+window.addEventListener("cs-pendientes-subidos",e=>{onData();toast(e.detail===1?"Se subió tu cambio a la nube":`Se subieron ${e.detail} cambios a la nube`)});
+window.addEventListener("cs-pendiente-rechazado",e=>{toast(e.detail&&e.detail.code==="check_violation"?"Un cambio no se pudo subir: falta actualizar Supabase.":"Un cambio hecho sin conexión no se pudo subir (sin permiso).")});
 function onData(){
   const m=$("#mode");
   if(mode==="db"&&!fresh){m.textContent=offline?"Sin conexión":"Actualizando…";m.className="mode"+(offline?" off":"")}
+  else if(mode==="db"&&db&&db.pendientes&&db.pendientes()){const n=db.pendientes();m.textContent=`${n} sin subir`;m.title="Hay cambios guardados en este teléfono que se suben solos cuando vuelva la conexión";m.className="mode off"}
+  else if(mode==="db"&&!navigator.onLine){m.textContent="Sin conexión";m.title="Puedes seguir usando la app: los cambios se suben solos al volver la señal";m.className="mode off"}
   else{m.textContent=mode==="db"?"En la nube":(window.CS_DEMO?"Modo demo":"En este teléfono");m.title=mode==="db"?"Tus datos se guardan en la nube":"";m.className="mode"+(mode==="db"?" on":"")}
   const soon=inventory.filter(useSoon).length;const bi=$("#badge-inv");bi.hidden=!soon;bi.textContent=soon;
   const nl=listaNeeded().length+lista.filter(x=>!x.marcado).length;const bl=$("#badge-list");bl.hidden=!nl;bl.textContent=nl;

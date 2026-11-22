@@ -192,10 +192,39 @@
       Object.entries(docOyentes).forEach(([k, fns]) => { const [c, id] = k.split("/"); if (c === col) fns.forEach((fn) => { try { fn(snapDoc(id, m.get(id))); } catch (e) { console.error(e); } }); });
     };
     const errDb = (e) => ({ code: e && e.code === "23514" ? "check_violation" : e && e.code === "42501" ? "invalid_argument" : /fetch|network|Failed/i.test(String(e && e.message)) ? "unavailable" : "invalid_argument", message: String((e && e.message) || e) });
+    /* ---- Cambios sin conexión (desde 2.3): se guardan en el teléfono y se suben solos al volver la señal ---- */
+    const PK = "cs-pendientes-" + hid;
+    let cola = (() => { try { return JSON.parse(localStorage.getItem(PK) || "[]"); } catch (e) { return []; } })(), subiendo = false;
+    const esRed = (e) => !navigator.onLine || /fetch|network|Failed|Load failed|NetworkError|timed? ?out|ECONN|abort/i.test(String((e && (e.message || e.details)) || e));
+    const guardarCola = () => { try { localStorage.setItem(PK, JSON.stringify(cola)); } catch (e) {} window.dispatchEvent(new CustomEvent("cs-pendientes", { detail: cola.length })); };
+    const encolar = (col, id, op, data) => { cola = cola.filter((x) => !(x.col === col && x.id === id)); cola.push({ col, id, op, data, t: Date.now() }); guardarCola(); };
+    const aplicarCola = (col) => { const m = cache[col] || (cache[col] = new Map()); cola.filter((x) => x.col === col).forEach((x) => { if (x.op === "del") m.delete(x.id); else m.set(x.id, x.data); }); };
+    async function escribir(x) {
+      try {
+        const { error } = x.op === "del"
+          ? await sb.from("documentos").delete().eq("hogar_id", hid).eq("coleccion", x.col).eq("id", x.id)
+          : await sb.from("documentos").upsert({ hogar_id: hid, coleccion: x.col, id: x.id, data: x.data, actualizado: new Date(x.t || Date.now()).toISOString() });
+        return error || null;
+      } catch (e) { return e || { message: "network" }; }
+    }
+    async function subir() {
+      if (subiendo || !cola.length) return; subiendo = true; let subidos = 0;
+      try {
+        while (cola.length) {
+          const x = cola[0], error = await escribir(x);
+          if (error && esRed(error)) break;
+          cola.shift(); guardarCola();
+          if (error) window.dispatchEvent(new CustomEvent("cs-pendiente-rechazado", { detail: { col: x.col, id: x.id, code: errDb(error).code } }));
+          else subidos++;
+        }
+      } finally { subiendo = false; }
+      if (subidos && !cola.length) window.dispatchEvent(new CustomEvent("cs-pendientes-subidos", { detail: subidos }));
+    }
     async function cargar(col) {
       const { data, error } = await sb.from("documentos").select("id,data").eq("hogar_id", hid).eq("coleccion", col);
       if (error) throw error;
       cache[col] = new Map((data || []).map((r) => [r.id, r.data]));
+      aplicarCola(col);
       cargadas[col] = true; avisar(col);
     }
     async function cargarConReintento(col) {
@@ -212,28 +241,38 @@
         })
         .subscribe((st) => { if (st === "SUBSCRIBED") Object.keys(cargadas).forEach((c) => cargarConReintento(c)); });
     }
-    const refrescar = () => Object.keys(cargadas).forEach((c) => cargarConReintento(c));
+    const refrescar = async () => { await subir(); Object.keys(cargadas).forEach((c) => cargarConReintento(c)); };
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refrescar(); });
     window.addEventListener("online", refrescar);
+    setInterval(() => { if (cola.length) subir(); }, 30000);
+    if (cola.length) setTimeout(subir, 1500);
 
     const docRef = (col, id) => ({
       id, path: col + "/" + id,
       async get() {
-        const { data, error } = await sb.from("documentos").select("data").eq("hogar_id", hid).eq("coleccion", col).eq("id", id).maybeSingle();
+        const pend = cola.find((x) => x.col === col && x.id === id);
+        if (pend) return snapDoc(id, pend.op === "del" ? undefined : pend.data);
+        let data, error;
+        try { ({ data, error } = await sb.from("documentos").select("data").eq("hogar_id", hid).eq("coleccion", col).eq("id", id).maybeSingle()); } catch (e) { error = e; }
+        if (error && esRed(error)) return snapDoc(id, cache[col] && cache[col].get(id));
         if (error) throw errDb(error);
         return snapDoc(id, data ? data.data : undefined);
       },
       async set(body) {
         const prev = cache[col] && cache[col].get(id);
         (cache[col] || (cache[col] = new Map())).set(id, body); avisar(col);
-        const { error } = await sb.from("documentos").upsert({ hogar_id: hid, coleccion: col, id, data: body, actualizado: new Date().toISOString() });
+        if (cola.length) { encolar(col, id, "set", body); subir(); return; }
+        const error = await escribir({ col, id, op: "set", data: body });
+        if (error && esRed(error)) { encolar(col, id, "set", body); return; }
         if (error) { if (prev === undefined) cache[col].delete(id); else cache[col].set(id, prev); avisar(col); throw errDb(error); }
       },
       async update(body) { const s = await this.get(); if (!s.exists) throw { code: "invalid_argument", message: "No existe" }; return this.set({ ...s.data(), ...body }); },
       async delete() {
         const prev = cache[col] && cache[col].get(id);
         if (cache[col]) { cache[col].delete(id); avisar(col); }
-        const { error } = await sb.from("documentos").delete().eq("hogar_id", hid).eq("coleccion", col).eq("id", id);
+        if (cola.length) { encolar(col, id, "del"); subir(); return; }
+        const error = await escribir({ col, id, op: "del" });
+        if (error && esRed(error)) { encolar(col, id, "del"); return; }
         if (error) { if (prev !== undefined) { cache[col].set(id, prev); avisar(col); } throw errDb(error); }
       },
       onSnapshot(next) {
@@ -262,6 +301,8 @@
     });
     return {
       collection: (p) => colRef(p),
+      pendientes: () => cola.length,
+      subir,
       doc: (p) => { const [c, id] = String(p).split("/"); return docRef(c, id); },
       async importar(datos) {
         const filas = [];
@@ -467,7 +508,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.2.1${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.3${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
