@@ -713,3 +713,30 @@ label,.lbl{font-size:.98rem}
 @media (max-width:360px){.sm-precio{padding-left:8px}.sm-tot span{font-size:1.8rem}}
 .sm-head .btn{flex-direction:row}
 body.sm-on .fab{display:none}
+
+/* ================================================================
+   2.4 — Animación de inicio (logo que se arma)
+   ================================================================ */
+.arranque{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#fff;transition:opacity 0.525s ease,transform 0.525s ease;cursor:pointer}
+.arranque.fuera{opacity:0;transform:scale(1.06);pointer-events:none}
+.arranque svg{width:min(78vw,340px,60vh);height:auto;overflow:visible}
+.arranque .d{opacity:0;stroke-dasharray:var(--l);stroke-dashoffset:var(--l);animation:arr-dibuja var(--t,0.675s) cubic-bezier(.6,0,.3,1) var(--w,0s) forwards}
+@keyframes arr-dibuja{0%{opacity:1}to{stroke-dashoffset:0;opacity:1}}
+.arranque .pop{transform-box:fill-box;transform-origin:center;transform:scale(0);animation:arr-pop 0.48s cubic-bezier(.3,1.6,.5,1) var(--w) forwards}
+@keyframes arr-pop{to{transform:scale(1)}}
+.arranque .bandera{transform:translateY(60px);opacity:0;animation:arr-sube 0.525s ease-out 0.525s forwards}
+@keyframes arr-sube{to{transform:none;opacity:1}}
+.arranque .swoosh{clip-path:inset(0 100% 0 0);animation:arr-barre 0.75s cubic-bezier(.5,0,.2,1) 0.825s forwards}
+@keyframes arr-barre{to{clip-path:inset(0 0 0 0)}}
+.arranque .carro{transform:translateX(-360px);opacity:0;animation:arr-rueda 0.9s cubic-bezier(.2,.9,.3,1.15) 1.05s forwards}
+@keyframes arr-rueda{0%{opacity:1}to{transform:none;opacity:1}}
+.arranque .tabla{transform:translateY(80px);opacity:0;animation:arr-sube 0.6s cubic-bezier(.2,.9,.3,1.2) 1.275s forwards}
+.arranque .txt{opacity:0;transform:translateY(30px);animation:arr-sube 0.675s cubic-bezier(.2,.8,.2,1) var(--w) forwards}
+.arranque .logo{transform-origin:512px 540px;animation:arr-respira 2.4s ease-in-out 3.15s infinite}
+@keyframes arr-respira{50%{transform:scale(1.025)}}
+.arr-msg{position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom,0px));margin:0;text-align:center;color:#5b6b66;font:600 16px var(--body,system-ui);opacity:0;animation:arr-aparece 0.6s ease 2.85s forwards}
+@keyframes arr-aparece{to{opacity:1}}
+.arr-msg i{display:inline-block;width:6px;height:6px;margin:0 2px;border-radius:50%;background:#f68b1f;animation:arr-punto 1s ease-in-out infinite}
+.arr-msg i:nth-child(2){animation-delay:0.225s}.arr-msg i:nth-child(3){animation-delay:0.45s}
+@keyframes arr-punto{50%{transform:translateY(-5px);opacity:.4}}
+@media (prefers-reduced-motion:reduce){.arranque *{animation-duration:0.015s!important;animation-delay:0s!important;animation-iteration-count:1!important}}
