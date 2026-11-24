@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/bricolage-grotesque-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/app.css?v=2.4.0">
+<link rel="stylesheet" href="/css/app.css?v=2.5.0">
 </head>
 <body>
 <div class="arranque" id="arranque" role="img" aria-label="Abriendo Casita Stock">
@@ -101,6 +101,7 @@ if((listo&&Date.now()-t0>=MIN)||Date.now()-t0>8000){clearInterval(iv);quitar()}}
       <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><path d="M4 16 17 5l13 11v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" fill="var(--accent)"/><rect x="11" y="18" width="12" height="9" rx="1.5" fill="var(--surface)"/><path d="M13 19.5v6M15 19.5v6M16.5 19.5v6M19 19.5v6M21 19.5v6" stroke="var(--accent)" stroke-width="1"/></svg>
       <h1>Casita Stock</h1>
       <span class="mode" id="mode">Conectando…</span>
+      <button class="iconbtn fam-btn" id="famact" aria-label="Actividad familiar"><svg class="i"><use href="#i-bell"/></svg><span class="fam-n" id="famn" hidden>0</span></button>
       <button class="iconbtn" id="cfg" aria-label="Ajustes"><svg class="i"><use href="#i-gear"/></svg></button>
     </div>
     <nav class="tabs" aria-label="Secciones">
@@ -123,18 +124,19 @@ if((listo&&Date.now()-t0>=MIN)||Date.now()-t0>8000){clearInterval(iv);quitar()}}
 <div class="gate" id="gate"><div class="gate-in"><div class="loading"><div class="thinking"><i></i><i></i><i></i></div>Abriendo Casita Stock…</div></div></div>
 <script src="/vendor/supabase-2.45.4.js"></script>
 <script src="/vendor/zxing-0.21.3.min.js"></script>
-<script src="/js/config-nativo.js?v=2.4.0"></script>
-<script src="/js/voz.js?v=2.4.0"></script>
-<script src="/js/plataforma.js?v=2.4.0"></script>
-<script src="/js/consumo.js?v=2.4.0"></script>
-<script src="/js/app.js?v=2.4.0"></script>
-<script src="/js/memoria.js?v=2.4.0"></script>
-<script src="/js/recomendar.js?v=2.4.0"></script>
-<script src="/js/presupuesto.js?v=2.4.0"></script>
-<script src="/js/avisos.js?v=2.4.0"></script>
-<script src="/js/asistente.js?v=2.4.0"></script>
-<script src="/js/facturas.js?v=2.4.0"></script>
-<script src="/js/supermercado.js?v=2.4.0"></script>
+<script src="/js/config-nativo.js?v=2.5.0"></script>
+<script src="/js/voz.js?v=2.5.0"></script>
+<script src="/js/plataforma.js?v=2.5.0"></script>
+<script src="/js/consumo.js?v=2.5.0"></script>
+<script src="/js/app.js?v=2.5.0"></script>
+<script src="/js/memoria.js?v=2.5.0"></script>
+<script src="/js/recomendar.js?v=2.5.0"></script>
+<script src="/js/presupuesto.js?v=2.5.0"></script>
+<script src="/js/avisos.js?v=2.5.0"></script>
+<script src="/js/actividad.js?v=2.5.0"></script>
+<script src="/js/asistente.js?v=2.5.0"></script>
+<script src="/js/facturas.js?v=2.5.0"></script>
+<script src="/js/supermercado.js?v=2.5.0"></script>
 <script>
 if ("serviceWorker" in navigator && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 </script>
