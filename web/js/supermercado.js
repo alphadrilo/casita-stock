@@ -40,7 +40,7 @@ const Super = (() => {
     const { id: _x, ...d } = { ...base, ...cambios };
     try { await store.set("lista", id, d); } catch (err) { writeErr(err); }
   }
-  const alternar = (f) => guardarFila(f, { marcado: !f.on });
+  const alternar = (f) => { if (!f.on && window.Actividad) Actividad.avisarRepetido(f.p || { nombre: f.n }); return guardarFila(f, { marcado: !f.on }); };
   const cambiarCant = (f, delta) => { const n = Math.max(1, paquetes(f) + delta); guardarFila(f, { cantidad: f.p ? n * pp(f) : n }); };
 
   /* ---------- Voz: "metí 2 leches", "puse el pan y 6 bananos" ---------- */
@@ -91,7 +91,7 @@ const Super = (() => {
     const editando = precioDe === f.key;
     return `<li class="sm-it${f.on ? " on" : ""}">
       <button class="sm-check" data-smt="${esc(f.key)}" aria-pressed="${f.on}" aria-label="${f.on ? "Sacar del carrito" : "Meter al carrito"}: ${esc(f.n)}"><span class="box">${icon("check")}</span>
-        <span class="sm-n"><b>${esc(f.n)}</b><span>${pr ? `${money(pr.v)}${unidad ? " c/" + unidad.trim() : ""}${pr.real ? "" : " aprox."}` : "Sin precio"}</span></span></button>
+        <span class="sm-n"><b>${esc(f.n)}</b><span>${pr ? `${money(pr.v)}${unidad ? " c/" + unidad.trim() : ""}${pr.real ? "" : " aprox."}` : "Sin precio"}</span>${window.Actividad && !f.on ? Actividad.yaHTML(f.p || { nombre: f.n }) : ""}</span></button>
       <div class="sm-acc">
         <span class="stepper sm"><button data-smq="-1" data-k="${esc(f.key)}" aria-label="Menos">−</button><output>×${q}</output><button data-smq="1" data-k="${esc(f.key)}" aria-label="Más">+</button></span>
         <button class="sm-pr" data-smp="${esc(f.key)}" aria-label="Escribir precio de ${esc(f.n)}">$</button>

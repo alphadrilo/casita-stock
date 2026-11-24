@@ -94,15 +94,17 @@ const LOCAL_EXAMPLES=()=>[
 const store={
   async set(col,id,body){
     const b=JSON.parse(JSON.stringify(body));delete b.id;b.actualizado=Date.now();
-    if(mode==="db")return db.collection(col).doc(id).set(b);
+    const prev=col==="productos"?inventory.find(x=>x.id===id):null;   // para la actividad familiar (2.5)
+    if(mode==="db"){await db.collection(col).doc(id).set(b);if(window.Actividad)Actividad.trasGuardar(col,id,prev,b);return}
     const [arr,,key]=LOCAL_COL[col]();const i=arr.findIndex(x=>x.id===id);
     if(i>=0)arr[i]={...b,id};else arr.unshift({...b,id});
-    LS.set(key,arr);onData();
+    LS.set(key,arr);onData();if(window.Actividad)Actividad.trasGuardar(col,id,prev,b);
   },
   async del(col,id){
-    if(mode==="db")return db.collection(col).doc(id).delete();
+    const prev=col==="productos"?inventory.find(x=>x.id===id):null;
+    if(mode==="db"){await db.collection(col).doc(id).delete();if(window.Actividad)Actividad.trasGuardar(col,id,prev,null);return}
     const [arr,setArr,key]=LOCAL_COL[col]();const nv=arr.filter(x=>x.id!==id);setArr(nv);LS.set(key,nv);
-    onData();
+    onData();if(window.Actividad)Actividad.trasGuardar(col,id,prev,null);
   },
   async savePresupuesto(b){presupuesto=b;if(mode==="db"){if(b)await db.doc("ajustes/presupuesto").set(JSON.parse(JSON.stringify(b)));else await db.doc("ajustes/presupuesto").delete()}else LS.set(K.pr,b);mirrorSave();onData()},
   async saveAnalysis(a){analysis=a;if(mode==="db"){try{await db.doc("ajustes/analisis").set(JSON.parse(JSON.stringify(a)))}catch(e){}}else LS.set(K.a,a)}
@@ -976,7 +978,7 @@ function renderList(v,bar){
   const gruposHTML=()=>PASILLOS.map(c=>{const fs=filas.filter(f=>(PASILLOS.includes(f.cat)?f.cat:"Otros")===c).sort((a,b)=>a.on-b.on||a.n.localeCompare(b.n));
     return fs.length?`<div class="field pasillo"><span class="lbl">${esc(c)}<span class="pc">${fs.filter(f=>!f.on).length||"✓"}</span></span><div class="inv">${fs.map(f=>f.p?rowP(f.p,f.e):rowM(f.m)).join("")}</div></div>`:""}).join("");
   const rowP=(p,entry)=>{const on=!!(entry&&entry.marcado);const pp=ppOf(p);const un=entry?entry.cantidad:recBuy(p);const qn=pp>1?`${Math.max(1,Math.ceil(un/pp))} ${empN(p,Math.max(1,Math.ceil(un/pp)))}`:un;const[s]=status(p);
-    return `<div class="rowx"><button class="check" aria-pressed="${on}" data-tp="${p.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(p.nombre)}</span><br><span class="cm">${s==="out"?"Se acabó":`Te ${p.cantidad===1?"queda":"quedan"} ${esc(qtyTxt(p))}`}${tiendaLista?(()=>{const pr=precioEn(p,tiendaLista),mb=masBarato(p,tiendaLista);return `${pr!=null?` · ${money(pr*pp)}${pp>1?" c/"+esc(emp(p)):""} aquí`:" · sin precio aquí"}${mb?`<span class="mb">Más barato en ${esc(mb.t)}: ${money(mb.p*pp)}</span>`:""}`})():`${p.tienda?` · ${esc(p.tienda)}`:""}${p.precio!=null?` · ${money(p.precio*pp)}${pp>1?" c/"+esc(emp(p)):""}`:""}`}</span></span><span class="qn">×${qn}</span></button>
+    return `<div class="rowx"><button class="check" aria-pressed="${on}" data-tp="${p.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(p.nombre)}</span><br><span class="cm">${s==="out"?"Se acabó":`Te ${p.cantidad===1?"queda":"quedan"} ${esc(qtyTxt(p))}`}${window.Actividad?Actividad.yaHTML(p):""}${tiendaLista?(()=>{const pr=precioEn(p,tiendaLista),mb=masBarato(p,tiendaLista);return `${pr!=null?` · ${money(pr*pp)}${pp>1?" c/"+esc(emp(p)):""} aquí`:" · sin precio aquí"}${mb?`<span class="mb">Más barato en ${esc(mb.t)}: ${money(mb.p*pp)}</span>`:""}`})():`${p.tienda?` · ${esc(p.tienda)}`:""}${p.precio!=null?` · ${money(p.precio*pp)}${pp>1?" c/"+esc(emp(p)):""}`:""}`}</span></span><span class="qn">×${qn}</span></button>
       ${entry?`<button class="xbtn" data-rl="${entry.id}" aria-label="Quitar de la lista">${icon("close")}</button>`:""}</div>`};
   const rowM=e=>`<div class="rowx"><button class="check" aria-pressed="${!!e.marcado}" data-tm="${e.id}"><span class="box">${icon("check")}</span><span><span class="cn">${esc(e.nombre)}</span><br><span class="cm">Agregado a mano<span data-uid="${esc(e.u||"")}"></span></span></span><span class="qn">×${e.cantidad||1}</span></button>
       <button class="xbtn" data-rl="${e.id}" aria-label="Quitar de la lista">${icon("close")}</button></div>`;
@@ -984,6 +986,7 @@ function renderList(v,bar){
       <p class="summary-line">${all?`Tienes <b>${plural(all,"cosa")}</b> en la lista.${checked.length?` Ya marcaste <b>${checked.length}</b>.`:""}`:"Tu lista está vacía. No falta nada en casa."}</p>
       ${canWrite?`<div class="inline"><input type="text" id="addm" placeholder="Agregar algo, ej. pan" aria-label="Agregar a la lista"><button class="btn sm" id="addmb">${icon("plus")}Agregar</button></div>`:""}
     </section>
+    ${window.Actividad?Actividad.compradoHoyHTML():""}
     ${all&&canWrite&&window.Super?`<button class="card big-action sm-start" id="gosuper"><span class="ico">${icon("cart")}</span><span><b>Estoy en el supermercado</b><span>Pantalla grande para marcar lo que metes, con el total en vivo. También por voz.</span></span></button>`:""}
     ${all?tiendaHTML()+(window.Presupuesto?Presupuesto.listaHTML(tiendaLista):"")+gruposHTML():""}
     ${aiState==="ready"&&inventory.length?`<button class="card big-action" id="aiList"><span class="ico" style="background:var(--ai-soft);color:var(--ai)">${icon("spark")}</span><span><b>¿Se me olvida algo?</b><span>La IA revisa tu consumo y te dice qué más deberías comprar.</span></span></button>`:""}
@@ -997,11 +1000,12 @@ function renderList(v,bar){
         else await store.set("lista",uid(),{productoId:"",nombre:n,cantidad:1,marcado:false,creado:Date.now(),u:me||""});
         toast(`${dup?dup.nombre:n} está en tu lista`)}catch(e){writeErr(e)}};
     $("#addmb").onclick=add;$("#addm").onkeydown=e=>{if(e.key==="Enter")add()}}
-  $$("[data-tp]").forEach(b=>b.onclick=()=>{const p=inventory.find(x=>x.id===b.dataset.tp);if(p&&canWrite)toggleNeeded(p)});
+  $$("[data-tp]").forEach(b=>b.onclick=()=>{const p=inventory.find(x=>x.id===b.dataset.tp);if(p&&canWrite){if(b.getAttribute("aria-pressed")!=="true"&&window.Actividad)Actividad.avisarRepetido(p);toggleNeeded(p)}});
   $$("[data-tm]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.tm);if(!e||!canWrite)return;try{await store.set("lista",e.id,{...e,marcado:!e.marcado})}catch(err){writeErr(err)}});
   $$("[data-rl]").forEach(b=>b.onclick=async()=>{const e=lista.find(x=>x.id===b.dataset.rl);if(!e)return;const copy={...e};try{await store.del("lista",e.id);toast(`${e.nombre} salió de la lista`,()=>store.set("lista",copy.id,copy))}catch(err){writeErr(err)}});
   bindAvisos();
   if($("#gosuper"))$("#gosuper").onclick=()=>Super.abrir();
+  if($("#fam-ver-hoy"))$("#fam-ver-hoy").onclick=()=>Actividad.abrir();
   $$("[data-tienda]").forEach(b=>b.onclick=()=>{tiendaLista=b.dataset.tienda;try{localStorage.setItem("cs-lista-tienda",tiendaLista)}catch(e){}render()});
   if($("#aiList"))$("#aiList").onclick=()=>{openAsst("Revisa mi inventario y mi consumo. ¿Qué más debería comprar esta semana que no esté ya en mi lista? La lista tiene: "+[...lista.map(x=>x.nombre),...auto.map(p=>p.nombre)].join(", "))};
   fillNames();

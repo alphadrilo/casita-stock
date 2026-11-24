@@ -183,7 +183,7 @@
   function hacerDb() {
     const hid = hogar.id;
     const cache = {}; const oyentes = {}; const docOyentes = {};
-    let canal = null, cargadas = {};
+    let canal = null, cargadas = {}, actSinTabla = false;
     const snapDoc = (id, d) => ({ id, exists: d !== undefined, data: () => d, metadata: { fromCache: false, hasPendingWrites: false } });
     const avisar = (col) => {
       const m = cache[col] || new Map();
@@ -197,10 +197,34 @@
     let cola = (() => { try { return JSON.parse(localStorage.getItem(PK) || "[]"); } catch (e) { return []; } })(), subiendo = false;
     const esRed = (e) => !navigator.onLine || /fetch|network|Failed|Load failed|NetworkError|timed? ?out|ECONN|abort/i.test(String((e && (e.message || e.details)) || e));
     const guardarCola = () => { try { localStorage.setItem(PK, JSON.stringify(cola)); } catch (e) {} window.dispatchEvent(new CustomEvent("cs-pendientes", { detail: cola.length })); };
-    const encolar = (col, id, op, data) => { cola = cola.filter((x) => !(x.col === col && x.id === id)); cola.push({ col, id, op, data, t: Date.now() }); guardarCola(); };
+    /* extra: {delta, hist} para productos (2.5): al subir se suma a lo que haya en la nube en vez de pisarlo */
+    const encolar = (col, id, op, data, extra) => {
+      const viejo = cola.find((x) => x.col === col && x.id === id && x.op === "set");
+      if (extra && viejo && viejo.merge && op === "set") extra = { delta: viejo.merge.delta + extra.delta, hist: [...viejo.merge.hist, ...extra.hist] };
+      if (op === "act") { if (cola.some((x) => x.op === "act" && x.id === id)) return; cola.push({ col, id, op, data, deps: extra || [], t: Date.now() }); guardarCola(); return; }
+      cola = cola.filter((x) => !(x.col === col && x.id === id && x.op !== "act")); cola.push({ col, id, op, data, merge: extra || null, t: Date.now() }); guardarCola();
+    };
+    const claveH = (h) => JSON.stringify([h.t, h.n, h.f, h.u || "", h.cid || "", h.s || "", h.ts || ""]);
+    function fusionar(servidor, x) {
+      if (!servidor || !x.merge) return x.data;
+      const vistos = new Set((servidor.historial || []).map(claveH));
+      const hist = [...(servidor.historial || []), ...x.merge.hist.filter((h) => !vistos.has(claveH(h)))].slice(-40);
+      return { ...x.data, cantidad: Math.max(0, Math.round(((+servidor.cantidad || 0) + x.merge.delta) * 1000) / 1000), historial: hist };
+    }
     const aplicarCola = (col) => { const m = cache[col] || (cache[col] = new Map()); cola.filter((x) => x.col === col).forEach((x) => { if (x.op === "del") m.delete(x.id); else m.set(x.id, x.data); }); };
     async function escribir(x) {
       try {
+        if (x.op === "act") {
+          const { error } = await sb.from("actividad").upsert({ ...x.data, hogar_id: hid }, { onConflict: "id", ignoreDuplicates: true });
+          if (error && /actividad/.test(String(error.message || "")) && /exist|find|schema cache/i.test(String(error.message || ""))) { actSinTabla = true; return null; }
+          return error || null;
+        }
+        if (x.op === "set" && x.merge && x.col === "productos") {
+          let srv = null;
+          try { const r = await sb.from("documentos").select("data").eq("hogar_id", hid).eq("coleccion", x.col).eq("id", x.id).maybeSingle(); if (r.error) return r.error; srv = r.data ? r.data.data : null; } catch (e) { return e; }
+          const data = fusionar(srv, x);
+          if (data !== x.data) { x.data = data; (cache[x.col] || (cache[x.col] = new Map())).set(x.id, data); avisar(x.col); }
+        }
         const { error } = x.op === "del"
           ? await sb.from("documentos").delete().eq("hogar_id", hid).eq("coleccion", x.col).eq("id", x.id)
           : await sb.from("documentos").upsert({ hogar_id: hid, coleccion: x.col, id: x.id, data: x.data, actualizado: new Date(x.t || Date.now()).toISOString() });
@@ -213,7 +237,9 @@
         while (cola.length) {
           const x = cola[0], error = await escribir(x);
           if (error && esRed(error)) break;
-          cola.shift(); guardarCola();
+          cola.shift();
+          if (error && x.op !== "act") { const k = x.col + "/" + x.id; cola = cola.filter((y) => !(y.op === "act" && (y.deps || []).includes(k))); }   // sin la operación, no hay actividad
+          guardarCola();
           if (error) window.dispatchEvent(new CustomEvent("cs-pendiente-rechazado", { detail: { col: x.col, id: x.id, code: errDb(error).code } }));
           else subidos++;
         }
@@ -239,6 +265,9 @@
           if (p.eventType === "DELETE") m.delete(row.id); else m.set(row.id, row.data);
           avisar(row.coleccion);
         })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "actividad", filter: "hogar_id=eq." + hid }, (p) => {
+          if (p.new) window.dispatchEvent(new CustomEvent("cs-actividad", { detail: p.new }));
+        })
         .subscribe((st) => { if (st === "SUBSCRIBED") Object.keys(cargadas).forEach((c) => cargarConReintento(c)); });
     }
     const refrescar = async () => { await subir(); Object.keys(cargadas).forEach((c) => cargarConReintento(c)); };
@@ -261,9 +290,11 @@
       async set(body) {
         const prev = cache[col] && cache[col].get(id);
         (cache[col] || (cache[col] = new Map())).set(id, body); avisar(col);
-        if (cola.length) { encolar(col, id, "set", body); subir(); return; }
+        const ex = col === "productos" && prev && isFinite(+prev.cantidad) && isFinite(+body.cantidad)
+          ? { delta: +body.cantidad - +prev.cantidad, hist: (body.historial || []).filter((h) => !new Set((prev.historial || []).map(claveH)).has(claveH(h))) } : null;
+        if (cola.length) { encolar(col, id, "set", body, ex); subir(); return; }
         const error = await escribir({ col, id, op: "set", data: body });
-        if (error && esRed(error)) { encolar(col, id, "set", body); return; }
+        if (error && esRed(error)) { encolar(col, id, "set", body, ex); return; }
         if (error) { if (prev === undefined) cache[col].delete(id); else cache[col].set(id, prev); avisar(col); throw errDb(error); }
       },
       async update(body) { const s = await this.get(); if (!s.exists) throw { code: "invalid_argument", message: "No existe" }; return this.set({ ...s.data(), ...body }); },
@@ -301,7 +332,27 @@
     });
     return {
       collection: (p) => colRef(p),
-      pendientes: () => cola.length,
+      pendientes: () => cola.filter((x) => x.op !== "act").length,
+      /* Actividad familiar (2.5): se registra DESPUÉS de guardar; si la operación está en la cola, va detrás de ella */
+      actividad: {
+        sinTabla: () => actSinTabla,
+        async registrar(row, deps = []) {
+          if (actSinTabla) return;
+          if (cola.length || !navigator.onLine) { encolar("__act", row.id, "act", row, deps); subir(); return; }
+          const error = await escribir({ op: "act", id: row.id, data: row });
+          if (error && esRed(error)) encolar("__act", row.id, "act", row, deps);
+        },
+        async listar(limite = 80) {
+          let filas = [];
+          try {
+            const { data, error } = await sb.from("actividad").select("*").eq("hogar_id", hid).order("creado", { ascending: false }).limit(limite);
+            if (error) { if (/actividad/.test(String(error.message || "")) && /exist|find|schema cache/i.test(String(error.message || ""))) actSinTabla = true; else if (!esRed(error)) throw error; }
+            else filas = data || [];
+          } catch (e) { if (!esRed(e)) throw e; }
+          const pend = cola.filter((x) => x.op === "act" && !filas.some((f) => f.id === x.id)).map((x) => ({ ...x.data, hogar_id: hid, user_id: session.user.id, creado: new Date(x.t).toISOString(), pendiente: true }));
+          return [...pend, ...filas];
+        },
+      },
       subir,
       doc: (p) => { const [c, id] = String(p).split("/"); return docRef(c, id); },
       async importar(datos) {
@@ -508,7 +559,7 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.4${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.5${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
   async function abrirAjustes() {
