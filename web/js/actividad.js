@@ -20,6 +20,25 @@ const Actividad = (() => {
   const cant = (t) => { t = String(t || "").trim(); return !t || t === "0" ? "" : /^\d+(?:[.,]\d+)?$/.test(t) ? "×" + t : t; };
   const autor = (r) => (mio(r) ? "Tú" : r.autor || nombres[r.user_id] || "Alguien de la casa");
 
+  /* ---------- Fotos de la familia (2.6) ---------- */
+  let fotos = {};
+  const COLORES = ["#047857", "#B45309", "#7C3AED", "#BE185D", "#0369A1", "#4D7C0F", "#C2410C", "#0F766E"];
+  const colorDe = (u) => { let h = 0; for (const c of String(u || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORES[h % COLORES.length]; };
+  /* avatar(uid, nombre, tamaño "sm"|"md"|"lg"|"xl", insignia opcional) — foto o inicial con color fijo por persona */
+  function avatar(u, nombre, t = "md", badge = "") {
+    if (u === me && !nombre) nombre = miNombre;
+    nombre = nombre || nombres[u] || "";
+    const f = fotos[u], ini = (nombre.trim().charAt(0) || "?").toUpperCase();
+    return `<span class="av av-${t}"${f ? "" : ` style="background:${colorDe(u)}"`} aria-hidden="true">${f ? `<img src="${esc(f)}" alt="">` : esc(ini)}${badge ? `<span class="av-b">${icon(badge)}</span>` : ""}</span>`;
+  }
+  let fotosEn = 0;
+  async function cargarFotos(forzar) {
+    if (!users || !users.familia) return;
+    const viejo = Date.now() - fotosEn > 300000; fotosEn = Date.now();
+    try { const fam = await users.familia(forzar || viejo); fotos = {}; for (const m of fam) { if (m.foto) fotos[m.id] = m.foto; if (m.name) nombres[m.id] = nombres[m.id] || m.name; } } catch (e) {}
+  }
+  const avDe = (r, t, badge) => avatar(mio(r) ? me : r.user_id, mio(r) ? miNombre : r.autor || nombres[r.user_id], t, badge);
+
   async function quienSoy() {
     if (miNombre) return miNombre;
     try { miNombre = users ? (await users.name()) || "" : ""; } catch (e) {}
@@ -79,6 +98,7 @@ const Actividad = (() => {
     cambio();
   }
   async function cargarNombres() {
+    await cargarFotos(); quienSoy();
     const faltan = [...new Set(filas.map((f) => f.user_id).filter((u) => u && !nombres[u]))];
     if (!faltan.length || !users || !users.profiles) return;
     try { const r = await users.profiles(faltan); for (const u of faltan) if (r[u] && r[u].name) nombres[u] = r[u].name; } catch (e) {}
@@ -104,7 +124,7 @@ const Actividad = (() => {
     let h = document.getElementById("fam-aviso");
     if (!h) { h = document.createElement("div"); h.id = "fam-aviso"; h.setAttribute("role", "status"); h.setAttribute("aria-live", "polite"); document.body.append(h); }
     const it = (row.data && row.data.items) || [];
-    h.innerHTML = `<button class="fa-card" id="fa-ver"><span class="fa-ico">${icon("cart")}</span><span class="fa-tx"><b>${esc(autor(row))} realizó una compra${row.data.tienda ? " en " + esc(row.data.tienda) : ""}</b>
+    h.innerHTML = `<button class="fa-card" id="fa-ver">${avDe(row, "lg", "cart")}<span class="fa-tx"><b>${esc(autor(row))} realizó una compra${row.data.tienda ? " en " + esc(row.data.tienda) : ""}</b>
       <span>${it.slice(0, 3).map((x) => esc(x.nombre + (cant(x.texto) ? ` (${cant(x.texto)})` : ""))).join(" · ")}${it.length > 3 ? ` y ${it.length - 3} más` : ""}</span>
       <small>Ya está en el inventario de la casa</small></span></button><button class="fa-x" id="fa-x" aria-label="Cerrar aviso">${icon("close")}</button>`;
     h.className = "fam-aviso on";
@@ -150,7 +170,7 @@ const Actividad = (() => {
   function filaHTML(r) {
     const d = r.data || {}, nl = noLeida(r), ab = abierta === r.id, ini = autor(r).charAt(0).toUpperCase();
     return `<li class="fam-it${nl ? " nueva" : ""}"><button class="fam-b" data-fa="${esc(r.id)}" aria-expanded="${ab}">
-      <span class="fam-av t-${esc(r.tipo)}" aria-hidden="true">${r.tipo === "compra" ? icon("cart") : esc(ini)}</span>
+      ${avDe(r, "md", r.tipo === "compra" ? "cart" : "")}
       <span class="fam-tx"><span>${esc(frase(r))}</span><small>${hora(cuando(r))}${r.pendiente && !navigator.onLine ? " · sin subir" : ""}</small></span>
       ${nl ? `<span class="fam-dot" aria-label="Nueva"></span>` : ""}</button>
       ${ab && r.tipo === "compra" ? `<ul class="fam-items">${(d.items || []).map((x) => `<li><span>${esc(x.nombre)}</span><b>${esc(cant(x.texto))}</b></li>`).join("")}</ul>
@@ -204,7 +224,7 @@ const Actividad = (() => {
     const rs = filas.filter((r) => r.tipo === "compra" && !mio(r) && new Date(cuando(r)).toDateString() === hoy);
     if (!rs.length) return "";
     return `<section class="card fam-hoy"><span class="aitag g">${icon("users")}Ya comprado hoy por la familia</span>
-      <ul>${rs.flatMap((r) => (r.data.items || []).map((x) => `<li><span>${esc(x.nombre)}${cant(x.texto) ? ` <small>${esc(cant(x.texto))}</small>` : ""}</span><small>${esc(autor(r))} · ${hora(cuando(r))}</small></li>`)).slice(0, 8).join("")}</ul>
+      <ul>${rs.flatMap((r) => (r.data.items || []).map((x) => `<li>${avDe(r, "sm")}<span>${esc(x.nombre)}${cant(x.texto) ? ` <small>${esc(cant(x.texto))}</small>` : ""}</span><small>${esc(autor(r))} · ${hora(cuando(r))}</small></li>`)).slice(0, 8).join("")}</ul>
       <button class="linkbtn" id="fam-ver-hoy">Ver actividad familiar</button></section>`;
   }
 
@@ -239,6 +259,7 @@ const Actividad = (() => {
   /* ---------- Inicio ---------- */
   function iniciar() {
     window.addEventListener("cs-actividad", (e) => recibir(e.detail));
+    window.addEventListener("cs-fotos", async () => { await cargarFotos(); cambio(); if (typeof render === "function") render(); });
     window.addEventListener("online", () => setTimeout(recargar, 800));
     document.addEventListener("visibilitychange", () => { if (!document.hidden) recargar(); });
     const b = document.getElementById("famact"); if (b) b.onclick = () => abrir();
@@ -246,7 +267,7 @@ const Actividad = (() => {
   }
 
   return { trasGuardar, registrar, recargar, recibir, filas: () => filas, pendientes, marcarTodo, marcarLeida, abrir, frase, autor,
-    compradoPorOtro, yaHTML, avisarRepetido, compradoHoyHTML, paraIA, responder, cfg, iniciar };
+    compradoPorOtro, yaHTML, avisarRepetido, compradoHoyHTML, paraIA, responder, cfg, iniciar, avatar, familia: async () => { await cargarFotos(); return users && users.familia ? users.familia() : []; } };
 })();
 window.Actividad = Actividad;
 Actividad.iniciar();

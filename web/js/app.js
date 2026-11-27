@@ -1086,7 +1086,8 @@ function renderAI(v,bar){
         <button class="btn aib" id="openasst">${icon("mic")}Hablar con ${esc(Voz.nombre())}</button>
       </section>`;
   }
-  v.innerHTML=recoHTML()+aiBlock+memCardHTML()+gastos+`<section class="card"><span class="aitag g">${icon("users")}En familia</span><p class="lead">Invita a tu familia desde Ajustes (el engranaje de arriba) con el código de tu casa. Todos verán el mismo inventario y la misma lista, y en cada producto verás quién compró o usó.</p></section>`;
+  v.innerHTML=recoHTML()+aiBlock+memCardHTML()+gastos+`<section class="card"><span class="aitag g">${icon("users")}En familia</span><div class="fam-caras" id="fam-caras"></div><p class="lead">Invita a tu familia desde Ajustes (el engranaje de arriba) con el código de tu casa. Todos verán el mismo inventario y la misma lista, y en cada producto verás quién compró o usó.</p></section>`;
+  if(window.Actividad&&Actividad.familia) Actividad.familia().then(fam=>{const h=$("#fam-caras");if(h&&fam&&fam.length)h.innerHTML=fam.map(m=>`<span class="fam-cara">${Actividad.avatar(m.id,m.name,"lg")}<small>${esc(m.id===me?"Tú":m.name||"Sin nombre")}</small></span>`).join("");}).catch(()=>{});
   if($("#analyze"))$("#analyze").onclick=analyze;
   bindReco();if(window.Presupuesto)Presupuesto.bind();if($("#vermem"))$("#vermem").onclick=()=>Memoria.abrir();
   if($("#gohist"))$("#gohist").onclick=()=>openScreen("hist","ai");

@@ -17,7 +17,7 @@
   const instalada = nativo || window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
   const origen = BASE || location.origin;
 
-  let cfg = null, sb = null, session = null, hogar = null, miembros = [], caps = null, demo = false;
+  let cfg = null, sb = null, session = null, hogar = null, miembros = [], caps = null, demo = false, fotoSinColumna = false, sin26 = false;
   let listo; const ready = new Promise((r) => (listo = r));
   window.claude = { use: (n) => ready.then(() => (caps ? caps[n] || null : null)) };
 
@@ -85,51 +85,189 @@
   }
 
   async function cargarHogar() {
-    const { data, error } = await sb.from("miembros").select("hogar_id,nombre,rol,hogares(id,nombre,codigo)").eq("user_id", session.user.id);
+    let { data, error } = await sb.from("miembros").select("hogar_id,nombre,rol,hogares(id,nombre,codigo,invitacion)").eq("user_id", session.user.id);
+    if (error && /invitacion/.test(String(error.message || ""))) { sin26 = true; ({ data, error } = await sb.from("miembros").select("hogar_id,nombre,rol,hogares(id,nombre,codigo)").eq("user_id", session.user.id)); }
     if (error) { const c = S.get("cs-hogar", null); if (c && c.uid === session.user.id) hogar = c; return; }
     const elegido = S.get("cs-hogar", null);
     const filas = (data || []).filter((m) => m.hogares);
     const m = filas.find((x) => elegido && x.hogar_id === elegido.id) || filas[0];
-    hogar = m ? { id: m.hogar_id, nombre: m.hogares.nombre, codigo: m.hogares.codigo, miNombre: m.nombre, rol: m.rol, uid: session.user.id, otros: filas.length } : null;
+    hogar = m ? { id: m.hogar_id, nombre: m.hogares.nombre, codigo: m.hogares.codigo, invitacion: m.hogares.invitacion || "", miNombre: m.nombre, rol: m.rol, uid: session.user.id, otros: filas.length } : null;
     if (hogar) S.set("cs-hogar", hogar);
+  }
+  /* Foto cuadrada y pequeña (192 px, unos 10 KB) para la familia */
+  async function fotoCuadrada(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+      const lado = Math.min(img.naturalWidth, img.naturalHeight), T = 192, c = document.createElement("canvas"); c.width = c.height = T;
+      c.getContext("2d").drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, T, T);
+      let q = 0.8, out = c.toDataURL("image/jpeg", q); while (out.length > 55000 && q > 0.4) { q -= 0.1; out = c.toDataURL("image/jpeg", q); }
+      return out;
+    } finally { URL.revokeObjectURL(url); }
   }
   async function cargarMiembros() {
     if (!sb || !hogar) return miembros;
-    const { data } = await sb.from("miembros").select("user_id,nombre,rol").eq("hogar_id", hogar.id);
+    let { data, error } = await sb.from("miembros").select("user_id,nombre,rol,foto").eq("hogar_id", hogar.id);
+    if (error && /foto/.test(String(error.message || ""))) { fotoSinColumna = true; ({ data } = await sb.from("miembros").select("user_id,nombre,rol").eq("hogar_id", hogar.id)); }
     if (data) miembros = data;
     return miembros;
   }
 
+  /* ---------------- Familia: invitaciones con aprobación (2.6) ----------------
+     El QR lleva un enlace con una clave larga (hogares.invitacion), nunca datos personales. Escanear o escribir el código
+     solo crea una solicitud: la persona entra cuando quien administra la casa la aprueba (validado en Supabase). */
+  const falta26 = (e) => /solicitar_unirme|ver_invitacion|mi_solicitud|cancelar_solicitud|responder_solicitud|quitar_miembro|desbloquear|solicitudes|bloqueos|invitacion|PGRST202|schema cache/i.test(String((e && (e.message || e.code)) || ""));
+  const MSGS_SQL = /^(Esa invitación|No es posible|Ya tienes|Esta casa tiene|Necesitas|Solo quien|No puedes|No se puede|Esa persona)/;
+  const msgError = (e, otro) => { const m = String((e && e.message) || ""); return MSGS_SQL.test(m) ? m : /fetch|network|Failed|Load failed/i.test(m) ? "No hay conexión. Revisa internet e inténtalo otra vez." : otro || "No se pudo completar. Inténtalo otra vez."; };
+  const enlaceInvitacion = (inv) => `${origen.replace(/\/$/, "")}/?unirme=${encodeURIComponent(inv)}`;
+  const limpiarClave = (txt) => { txt = String(txt || "").trim(); const m = txt.match(/[?&]unirme=([A-Za-z0-9]+)/); return (m ? m[1] : txt).replace(/[^A-Za-z0-9]/g, "").slice(0, 40); };
+  function qrSVG(texto) {
+    if (typeof qrcode !== "function") return "";
+    const q = qrcode(0, "M"); q.addData(texto); q.make();
+    const n = q.getModuleCount(), m = 2; let d = "";
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += `M${x + m} ${y + m}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n + m * 2} ${n + m * 2}" shape-rendering="crispEdges" role="img" aria-label="Código QR para pedir unirse a la casa"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#10231b"/></svg>`;
+  }
+  async function leerQR(file) {
+    if (!file) return "";
+    if ("BarcodeDetector" in window) { try { const r = await new BarcodeDetector({ formats: ["qr_code"] }).detect(await createImageBitmap(file)); if (r[0]) return r[0].rawValue; } catch (e) {} }
+    if (window.ZXing) { const url = URL.createObjectURL(file); try { return (await new ZXing.BrowserQRCodeReader().decodeFromImageUrl(url)).getText(); } catch (e) {} finally { URL.revokeObjectURL(url); } }
+    return "";
+  }
+  // La invitación del enlace se guarda en el teléfono: sobrevive a crear la cuenta, entrar o cerrar la app
+  try { const c = new URLSearchParams(location.search).get("unirme"); if (c) { S.set("cs-invitacion", limpiarClave(c)); history.replaceState(null, "", location.pathname); } } catch (e) {}
+
   function pasoHogar() {
     return new Promise((fin) => {
-      const elegir = (msg) => {
+      let canalSol = null, reloj = null, alVolver = null, vuelta = 0;
+      const parar = () => { vuelta++; if (canalSol) { try { sb.removeChannel(canalSol); } catch (e) {} canalSol = null; } clearInterval(reloj); if (alVolver) document.removeEventListener("visibilitychange", alVolver); alVolver = null; };
+      const entrar = async () => { await cargarHogar(); if (!hogar) return false; parar(); S.del("cs-invitacion"); fin(); return true; };
+      const campoNombre = () => `<div class="field"><label for="g-yo">¿Cómo te llamas?</label><input type="text" id="g-yo" autocomplete="given-name" maxlength="40" placeholder="Ej.: Levi" value="${esc(S.get("cs-minombre", ""))}"></div>`;
+      const yo = () => { const n = ($("#g-yo") ? $("#g-yo").value : "").trim(); if ($("#g-yo")) S.set("cs-minombre", n); return n; };
+      const aviso = (msg, ok) => msg ? `<div class="notice ${ok ? "ok" : "bad"}" role="${ok ? "status" : "alert"}">${ico(ok ? "check" : "alert")}<span>${esc(msg)}</span></div>` : "";
+      const estado = (icono, clase) => `<div class="g-est ${clase || ""}" aria-hidden="true">${ico(icono)}</div>`;
+
+      async function pedir(clave, n, boton) {
+        if (boton) boton.disabled = true;
+        const { data, error } = await sb.rpc("solicitar_unirme", { clave, mi_nombre: n });
+        if (error && falta26(error)) {   // Supabase todavía sin familia-2-6.sql: se une como antes
+          const r = await sb.rpc("unirse_hogar", { codigo_invitacion: clave, mi_nombre: n });
+          if (r.error) return { msg: /no existe/i.test(r.error.message) ? "Ese código no existe. Revisa las letras y números." : msgError(r.error, "No se pudo unir. Revisa tu conexión.") };
+          await entrar(); return {};
+        }
+        if (error) { if (/ya no sirve|No es posible/.test(error.message || "")) S.del("cs-invitacion"); return { msg: msgError(error) }; }
+        if (data.estado === "miembro") { await entrar(); return {}; }
+        S.del("cs-invitacion"); esperando(data.casa); return {};
+      }
+
+      // Pantalla: te invitaron (después de escanear el QR o abrir el enlace)
+      function invitado(casa, clave, msg) {
+        gate(`<section class="card"><div class="g-ctr">${estado("users", "ok")}<h2 class="gate-h">Te invitaron a ${esc(casa)}</h2>
+          <p class="lead">Envía tu solicitud. Cuando quien administra la casa la apruebe, verás el inventario y la lista de compras.</p></div>
+          ${campoNombre()}${aviso(msg)}
+          <button class="btn primary" id="g-pedir">${ico("send")}Solicitar unirme</button>
+          <button class="linkbtn" id="g-otra">No, gracias. Quiero crear mi propia casa</button></section>`);
+        $("#g-pedir").onclick = async () => { const n = yo(); if (!n) return invitado(casa, clave, "Escribe tu nombre para que sepan quién pide unirse."); const r = await pedir(clave, n, $("#g-pedir")); if (r.msg) invitado(casa, clave, r.msg); };
+        $("#g-otra").onclick = () => { S.del("cs-invitacion"); elegir(); };
+      }
+
+      // Pantalla: esperando aprobación (la respuesta llega en tiempo real; también se revisa al volver a la app y cada 20 s)
+      function esperando(casa, msg) {
+        parar();
+        gate(`<section class="card"><div class="g-ctr">${estado("clock", "warn")}<h2 class="gate-h">Esperando aprobación</h2>
+          <p class="lead">Le avisamos a quien administra <b>${esc(casa)}</b>. Cuando te apruebe, entrarás solo.</p></div>
+          ${aviso(msg || "Puedes cerrar la app. Tu solicitud queda guardada.", true)}
+          <button class="btn" id="g-rev">${ico("clock")}Revisar ahora</button>
+          <button class="linkbtn danger" id="g-can">Cancelar solicitud</button></section>`);
+        const mia = vuelta;
+        const revisar = async (manual) => {
+          if (mia !== vuelta) return;
+          let r; try { r = await sb.rpc("mi_solicitud"); } catch (e) { r = { error: e }; }
+          if (mia !== vuelta) return;
+          if (r.error) { if (manual) esperando(casa, "No hay conexión. Revisa internet e inténtalo otra vez."); return; }
+          const d = r.data;
+          if (d && d.estado === "aprobada") { S.set("cs-bienvenida", d.casa || casa); if (!(await entrar()) && manual) esperando(casa); return; }
+          if (d && d.estado === "rechazada") { parar(); S.set("cs-sol-vista", d.id); return respuesta("rechazada", d.casa || casa); }
+          if (!d || d.estado === "cancelada") { parar(); return elegir(); }
+          if (manual) esperando(casa, "Todavía no responde. Te avisamos aquí apenas lo haga.");
+        };
+        $("#g-rev").onclick = () => revisar(true);
+        $("#g-can").onclick = async () => { const b = $("#g-can"); if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "Toca otra vez para cancelar"; return; } parar(); await sb.rpc("cancelar_solicitud"); elegir(); };
+        try { canalSol = sb.channel("sol-" + session.user.id).on("postgres_changes", { event: "UPDATE", schema: "public", table: "solicitudes", filter: "user_id=eq." + session.user.id }, () => revisar(false)).subscribe(); } catch (e) {}
+        reloj = setInterval(() => revisar(false), 20000);
+        alVolver = () => { if (document.visibilityState === "visible") revisar(false); }; document.addEventListener("visibilitychange", alVolver);
+      }
+
+      // Pantallas: no fue aprobada / ya no formas parte
+      function respuesta(tipo, casa) {
+        const quitado = tipo === "quitado";
+        gate(`<section class="card"><div class="g-ctr">${estado(quitado ? "alert" : "x", "bad")}<h2 class="gate-h">${quitado ? `Ya no formas parte de ${esc(casa)}` : "Tu solicitud no fue aprobada"}</h2>
+          <p class="lead">${quitado ? "Quien administra la casa te quitó de ella y borramos de este teléfono los datos de esa casa." : `Quien administra ${esc(casa)} no aprobó tu solicitud. Si crees que es un error, habla con esa persona.`}</p></div>
+          <button class="btn primary" id="g-r1">${ico("plus")}Crear mi casa</button>
+          <button class="btn" id="g-r2">${ico("users")}Pedir unirme a una casa</button></section>`);
+        $("#g-r1").onclick = () => elegir(); $("#g-r2").onclick = () => elegir("", true);
+      }
+
+      // Pantalla: crear mi casa o pedir unirme con código o QR
+      function elegir(msg, enfocarCodigo, ok) {
         gate(`<section class="card"><h2 class="gate-h">Tu casa</h2>
           <p class="lead">Todos los que se unan a la misma casa ven el mismo inventario y la misma lista de compras.</p>
-          <div class="field"><label for="g-yo">¿Cómo te llamas?</label><input type="text" id="g-yo" autocomplete="given-name" placeholder="Ej.: Levi" value="${esc(S.get("cs-minombre", ""))}"></div>
-          ${msg ? `<div class="notice bad">${ico("alert")}<span>${esc(msg)}</span></div>` : ""}
+          ${campoNombre()}${aviso(msg)}
           <button class="btn primary" id="g-new">${ico("plus")}Crear mi casa</button>
           <div class="divider">o si alguien de tu familia ya la creó</div>
-          <div class="field"><label for="g-cod">Código de la casa</label><input type="text" id="g-cod" class="code" autocapitalize="characters" maxlength="12" placeholder="Ej.: 4F7A2C"></div>
-          <button class="btn" id="g-join">${ico("users")}Unirme con el código</button></section>`);
-        const yo = () => { const n = $("#g-yo").value.trim(); S.set("cs-minombre", n); return n; };
+          <div class="field"><label for="g-cod">Código de la casa</label><input type="text" id="g-cod" class="code" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="Ej.: 4F7A2C"></div>
+          ${aviso(ok, true)}
+          <button class="btn" id="g-join">${ico("send")}Pedir unirme con el código</button>
+          <label class="btn" style="position:relative;overflow:hidden">${ico("scan")}Escanear QR de la casa<input type="file" id="g-qr" accept="image/*" capture="environment" aria-label="Escanear QR de la casa" style="position:absolute;inset:0;opacity:0"></label>
+          <p class="hint" style="margin:0">Al pedir unirte, quien administra la casa recibe tu solicitud y decide si entras.</p></section>`);
+        if (enfocarCodigo) setTimeout(() => $("#g-cod") && $("#g-cod").focus(), 50);
         $("#g-new").onclick = async () => {
           const n = yo(); if (!n) return elegir("Escribe tu nombre para que tu familia sepa quién compró o usó cada cosa.");
           $("#g-new").disabled = true;
           const { error } = await sb.rpc("crear_hogar", { nombre_hogar: `Casa de ${n}`, mi_nombre: n });
           if (error) return elegir("No se pudo crear la casa. Revisa tu conexión e inténtalo otra vez.");
-          await cargarHogar(); fin();
+          await entrar();
         };
         $("#g-join").onclick = async () => {
-          const n = yo(); const c = $("#g-cod").value.trim();
+          const n = yo(); const c = limpiarClave($("#g-cod").value);
           if (!n) return elegir("Escribe tu nombre primero.");
           if (c.length < 4) return elegir("Escribe el código que te compartieron.");
-          $("#g-join").disabled = true;
-          const { error } = await sb.rpc("unirse_hogar", { codigo_invitacion: c, mi_nombre: n });
-          if (error) return elegir(/no existe/i.test(error.message) ? "Ese código no existe. Revisa las letras y números." : "No se pudo unir. Revisa tu conexión.");
-          await cargarHogar(); fin();
+          const r = await pedir(c, n, $("#g-join")); if (r.msg) elegir(r.msg);
         };
-      };
-      elegir();
+        $("#g-qr").onchange = async (e) => {
+          const f = e.target.files && e.target.files[0]; e.target.value = ""; yo(); if (!f) return;
+          const c = limpiarClave(await leerQR(f));
+          if (c.length < 4) return elegir("No pude leer el QR. Acércate más, con buena luz, y que se vea completo.");
+          S.set("cs-invitacion", c); abrirInvitacion(c);
+        };
+      }
+
+      async function abrirInvitacion(clave) {
+        const { data, error } = await sb.rpc("ver_invitacion", { clave });
+        if (error && falta26(error)) { S.del("cs-invitacion"); elegir(); if ($("#g-cod")) $("#g-cod").value = clave.length <= 12 ? clave.toUpperCase() : ""; return; }
+        if (error) { if (/ya no sirve/.test(error.message || "")) S.del("cs-invitacion"); return elegir(msgError(error)); }
+        if (data.estado === "miembro") { if (!(await entrar())) elegir(); return; }
+        if (data.estado === "pendiente") { S.del("cs-invitacion"); return esperando(data.casa); }
+        invitado(data.casa, clave);
+      }
+
+      (async () => {
+        const q = S.get("cs-quitado", null);
+        if (q) {   // Me quitaron de una casa: se borra otra vez lo que la app pudo guardar antes de recargar
+          ["cs-hogar", "cs5-mirror", q.hid ? "cs-pendientes-" + q.hid : ""].filter(Boolean).forEach(S.del);
+          S.del("cs-quitado"); return respuesta("quitado", q.casa || "la casa");
+        }
+        const inv = S.get("cs-invitacion", "");
+        if (inv) return abrirInvitacion(inv);
+        try {
+          const { data, error } = await sb.rpc("mi_solicitud");
+          if (!error && data) {
+            if (data.estado === "pendiente") return esperando(data.casa);
+            if (data.estado === "rechazada" && S.get("cs-sol-vista", "") !== data.id) { S.set("cs-sol-vista", data.id); return respuesta("rechazada", data.casa); }
+          }
+        } catch (e) {}
+        elegir();
+      })();
     });
   }
 
@@ -395,8 +533,17 @@
       name: async () => hogar.miNombre || "",
       async profiles(ids) {
         if (!miembros.length) await cargarMiembros();
-        const out = {}; [].concat(ids).forEach((id) => { const m = miembros.find((x) => x.user_id === id); out[id] = { id, name: m ? m.nombre : "" }; });
+        const out = {}; [].concat(ids).forEach((id) => { const m = miembros.find((x) => x.user_id === id); out[id] = { id, name: m ? m.nombre : "", foto: (m && m.foto) || "" }; });
         return out;
+      },
+      /* Fotos de la familia (2.6) */
+      async familia(recargar) { if (recargar || !miembros.length) await cargarMiembros(); return miembros.map((m) => ({ id: m.user_id, name: m.nombre || "", foto: m.foto || "", rol: m.rol })); },
+      fotoSinColumna: () => fotoSinColumna,
+      async guardarFoto(foto) {
+        const { error } = await sb.from("miembros").update({ foto: foto || null }).eq("hogar_id", hogar.id).eq("user_id", session.user.id);
+        if (error) { if (/foto/.test(String(error.message || ""))) { fotoSinColumna = true; throw { code: "sin_columna" }; } throw errDb(error); }
+        const m = miembros.find((x) => x.user_id === session.user.id); if (m) m.foto = foto || null;
+        window.dispatchEvent(new CustomEvent("cs-fotos"));
       },
     };
   }
@@ -527,10 +674,17 @@
       ${BASE || !nativo ? `<button class="btn sm" id="a-retry">Probar la conexión otra vez</button>` : ""}`
       : `<section class="card"><span class="aitag g">${ico("users")}Tu casa</span>
         <div class="field"><label for="a-casa">Nombre de la casa</label><input type="text" id="a-casa" value="${esc(hogar.nombre)}"></div>
-        <div class="field"><span class="lbl">Código para invitar a tu familia</span><div class="big-num" style="font-family:var(--mono);letter-spacing:.12em">${esc(hogar.codigo)}</div>
-          <p class="hint" style="margin:0">Quien instale la app entra con su correo, elige “Unirme con el código” y escribe este código.</p>
-          <div class="row"><button class="btn sm" id="a-share">${ico("send")}Compartir código</button><button class="btn sm" id="a-newcode">Cambiar código</button></div></div>
+        ${esAdmin() && !sin26 ? `<div class="field" id="a-solwrap" hidden><span class="lbl">Solicitudes pendientes <span class="cnt" id="a-soln"></span></span><div id="a-sol" class="sol-lista"></div></div>` : ""}
+        <div class="field"><span class="lbl">Invitar a tu familia</span><div class="big-num" style="font-family:var(--mono);letter-spacing:.12em">${esc(hogar.codigo)}</div>
+          <p class="hint" style="margin:0">${sin26 ? "Quien instale la app entra con su correo, elige “Unirme con el código” y escribe este código." : `Con el QR o el código, la persona <b>pide</b> unirse. ${esAdmin() ? "Nadie entra hasta que tú lo apruebes." : "Entra cuando quien administra la casa lo apruebe."}`}</p>
+          <div class="row">${!sin26 && hogar.invitacion ? `<button class="btn sm primary" id="a-qr">${ico("scan")}Mostrar QR</button>` : ""}<button class="btn sm" id="a-share">${ico("send")}Compartir código</button>${esAdmin() || sin26 ? `<button class="btn sm" id="a-newcode">Cambiar código</button>` : ""}</div></div>
         <div class="field"><span class="lbl">Quiénes están</span><ul class="list" id="a-fam"><li><span class="hint">Cargando…</span></li></ul></div>
+        ${esAdmin() && !sin26 ? `<div class="field" id="a-bloqwrap" hidden><span class="lbl">Bloqueados</span><ul class="list" id="a-bloq"></ul></div>` : ""}
+        <div class="field"><span class="lbl">Tu foto</span><div class="yo-foto"><span id="a-fav">${window.Actividad ? Actividad.avatar(session.user.id, hogar.miNombre, "xl") : ""}</span>
+          <div class="yo-acc"><label class="btn sm" style="position:relative">${ico("cam")}Tomar foto<input type="file" id="a-fcam" accept="image/*" capture="user" style="position:absolute;inset:0;opacity:0"></label>
+          <label class="btn sm" style="position:relative">${ico("image")}Elegir foto<input type="file" id="a-fgal" accept="image/*" style="position:absolute;inset:0;opacity:0"></label>
+          <button class="linkbtn danger" id="a-fdel" hidden>Quitar foto</button></div></div>
+          <p class="hint" style="margin:0">La ven solo las personas de tu casa, en los avisos y en la actividad.</p></div>
         <div class="field"><label for="a-yo">Tu nombre</label><input type="text" id="a-yo" value="${esc(hogar.miNombre || "")}"></div></section>`;
     return `<div class="sheet-wrap" id="a-scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="a-t">
       <div class="grab" aria-hidden="true"></div>
@@ -559,9 +713,112 @@
       ${!instalada ? `<section class="card"><span class="aitag g">${ico("plus")}Instalar en el teléfono</span><p class="lead" style="margin:0">En iPhone: abre esta página en Safari, toca Compartir y luego “Añadir a pantalla de inicio”.</p></section>` : ""}
       <section class="card"><span class="aitag g">${ico("mic")}Llamarlo con Siri</span><p class="lead" style="margin:0">${nativo ? `En la app Atajos crea un atajo con la acción <b>Abrir app → Casita Stock</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así dices “Oye Siri, ${esc(c.nombre || "tu asistente")}”, se abre la app y tocas el micrófono.` : `En la app Atajos crea un atajo que abra <b>${esc(origen)}/?hablar=1</b> y ponle de nombre <b>${esc(c.nombre || "tu asistente")}</b>. Así puedes decir “Oye Siri, ${esc(c.nombre || "tu asistente")}” y se abre listo para escucharte.`}</p></section>
       ${!demo ? `<section class="card"><span class="hint">Entraste como ${esc(session.user.email || "")}</span><button class="btn sm danger" id="a-out">Cerrar sesión</button></section>` : ""}
-      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.5${nativo ? " · app de iPhone" : ""}</p>
+      <p class="hint" style="text-align:center;margin:0">Casita Stock 2.6${nativo ? " · app de iPhone" : ""}</p>
     </div></div>`;
   }
+  const esAdmin = () => !!hogar && hogar.rol === "dueño";
+  const hace = (iso) => { const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); return !iso ? "" : m < 1 ? "ahora" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; };
+  function filaMiembros(fam) {
+    return fam.map((m) => { const yo = m.user_id === session.user.id, adm = m.rol === "dueño";
+      return `<li class="mi-fila">${window.Actividad ? Actividad.avatar(m.user_id, m.nombre, "md") : `<span class="ico g">${ico("users")}</span>`}<div><b>${esc(m.nombre || "Sin nombre")}${yo ? " (tú)" : ""}${adm ? ` <span class="rolt">Administrador</span>` : ""}</b><span>${adm ? "Creó la casa" : "Miembro"}</span></div>${esAdmin() && !sin26 && !yo && !adm ? `<button class="mas" data-quitar="${esc(m.user_id)}" aria-label="Opciones de ${esc(m.nombre || "este miembro")}">⋯</button>` : ""}</li>`; }).join("");
+  }
+  function hojaSimple(html) {
+    const h = document.createElement("div"); h.className = "hoja-fam";
+    h.innerHTML = `<div class="sheet-wrap" data-scrim><div class="sheet" role="dialog" aria-modal="true"><div class="grab" aria-hidden="true"></div><div class="top"><span></span><button class="x" data-cerrar aria-label="Cerrar">${ico("close")}</button></div>${html}</div></div>`;
+    document.body.append(h); const cerrar = () => h.remove();
+    h.querySelector("[data-cerrar]").onclick = cerrar; h.querySelector("[data-scrim]").onclick = (e) => { if (e.target.hasAttribute("data-scrim")) cerrar(); };
+    return { h, cerrar };
+  }
+  function hojaQR() {
+    const url = enlaceInvitacion(hogar.invitacion);
+    const { h, cerrar } = hojaSimple(`<div class="g-ctr"><h2>Invitar a ${esc(hogar.nombre)}</h2><p class="lead">Que tu familiar lo escanee con la cámara del teléfono.</p></div>
+      <div class="qrg" id="q-img">${qrSVG(url)}</div>
+      <div class="notice ok">${ico("check")}<span>${esAdmin() ? "<b>Tú decides quién entra.</b> Escanear el QR solo envía una solicitud. Te avisamos para que la apruebes o la rechaces." : "Escanear el QR solo envía una solicitud. Quien administra la casa decide si entra."}</span></div>
+      <button class="btn primary" id="q-share">${ico("send")}Compartir enlace</button>
+      <p class="hint g-ctr" style="margin:0">Si se cambia el código, este QR y el enlace dejan de servir.</p>`);
+    h.querySelector("#q-share").onclick = async () => {
+      const t = `Te invito a nuestra casa en Casita Stock. Abre este enlace, entra con tu correo y toca “Solicitar unirme”: ${url}`;
+      try { if (navigator.share) await navigator.share({ text: t }); else { await navigator.clipboard.writeText(t); toastP("Enlace copiado"); } } catch (e) {}
+    };
+    return cerrar;
+  }
+  function hojaQuitar(m, luego) {
+    if (!m) return;
+    const nom = esc(m.nombre || "esta persona");
+    let bloquear = false;
+    const { h, cerrar } = hojaSimple(`<div class="g-ctr">${window.Actividad ? Actividad.avatar(m.user_id, m.nombre, "xl") : ""}<h2 style="margin-top:8px">¿Qué hacemos con ${nom}?</h2></div>
+      <div role="radiogroup" aria-label="Qué hacer">
+        <button class="opc on" role="radio" aria-checked="true" data-op="quitar"><span class="rd" aria-hidden="true"></span><span><b>Quitar de la casa</b><span>Deja de ver el inventario, la lista y la actividad. Más adelante podría volver a pedir unirse y tú decides.</span></span></button>
+        <button class="opc" role="radio" aria-checked="false" data-op="bloquear"><span class="rd" aria-hidden="true"></span><span><b>Quitar y bloquear</b><span>Además, no podrá volver a pedir unirse a ${esc(hogar.nombre)}, aunque tenga el código o el QR.</span></span></button>
+      </div>
+      <p class="hint" style="margin:0">Lo que ${nom} agregó o compró se queda en la casa.${" "}Puedes desbloquear cuando quieras.</p>
+      <button class="btn danger" id="q-ok">${ico("trash")}Quitar a ${nom}</button><button class="btn" data-cerrar2>Cancelar</button>`);
+    const ok = h.querySelector("#q-ok");
+    h.querySelectorAll("[data-op]").forEach((b) => (b.onclick = () => {
+      bloquear = b.dataset.op === "bloquear";
+      h.querySelectorAll("[data-op]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); });
+      ok.innerHTML = `${ico("trash")}${bloquear ? `Quitar y bloquear a ${nom}` : `Quitar a ${nom}`}`;
+    }));
+    h.querySelector("[data-cerrar2]").onclick = cerrar;
+    ok.onclick = async () => {
+      ok.disabled = true;
+      const { error } = await sb.rpc("quitar_miembro", { h: hogar.id, quien: m.user_id, bloquear });
+      if (error) { ok.disabled = false; return toastP(msgError(error)); }
+      cerrar(); toastP(bloquear ? `${m.nombre || "La persona"} ya no está en la casa y quedó bloqueada` : `${m.nombre || "La persona"} ya no está en la casa`); luego && luego();
+    };
+  }
+
+  /* Avisos de solicitudes para quien administra + vigilar si me quitaron de la casa */
+  const Familia = (() => {
+    let canal = null, pendientes = 0;
+    const AV = () => "cs-sol-avisadas-" + (session ? session.user.id : "");
+    async function solicitudes() {
+      if (!esAdmin() || sin26 || demo) return [];
+      const { data, error } = await sb.from("solicitudes").select("id,user_id,nombre,correo,via,creado").eq("hogar_id", hogar.id).eq("estado", "pendiente").order("creado", { ascending: true });
+      if (error) { if (falta26(error)) sin26 = true; return []; }
+      return data || [];
+    }
+    function marcar(n) {
+      pendientes = n; const g = $("#cfg"); if (!g) return;
+      let c = g.querySelector(".cnt-sol"); if (!n) { if (c) c.remove(); g.setAttribute("aria-label", "Ajustes"); return; }
+      if (!c) { c = document.createElement("span"); c.className = "cnt-sol"; g.append(c); }
+      c.textContent = n > 9 ? "9+" : n; g.setAttribute("aria-label", `Ajustes. ${n} ${n === 1 ? "solicitud" : "solicitudes"} para unirse`);
+    }
+    function banner(r) {
+      let h = document.getElementById("sol-aviso");
+      if (!h) { h = document.createElement("div"); h.id = "sol-aviso"; h.setAttribute("role", "status"); h.setAttribute("aria-live", "polite"); document.body.append(h); }
+      h.innerHTML = `<button class="fa-card" id="sa-ver">${window.Actividad ? Actividad.avatar(r.user_id, r.nombre, "lg", "users") : ""}<span class="fa-tx"><b>${esc(r.nombre || "Alguien")} quiere unirse a ${esc(hogar.nombre)}</b><span>Pidió entrar ${r.via === "qr" ? "con el QR" : "con el código"} de la casa</span><small>Toca para aprobar o rechazar</small></span></button><button class="fa-x" id="sa-x" aria-label="Cerrar aviso">${ico("close")}</button>`;
+      h.className = "fam-aviso on";
+      const cerrar = () => { h.className = "fam-aviso"; clearTimeout(h._t); };
+      h.querySelector("#sa-ver").onclick = async () => { cerrar(); await abrirAjustes(); const w = $("#a-solwrap"); if (w) w.scrollIntoView({ block: "center" }); };
+      h.querySelector("#sa-x").onclick = cerrar; clearTimeout(h._t); h._t = setTimeout(cerrar, 12000);
+    }
+    async function revisar() {
+      const lista = await solicitudes(); marcar(lista.length);
+      const vistas = S.get(AV(), []); const nueva = lista.find((r) => !vistas.includes(r.id));
+      if (nueva) { S.set(AV(), [...vistas, ...lista.map((r) => r.id)].slice(-50)); banner(nueva); }
+    }
+    async function sigoEnCasa() {
+      if (demo || !hogar || document.visibilityState === "hidden") return;
+      let r; try { r = await sb.from("miembros").select("user_id").eq("hogar_id", hogar.id).eq("user_id", session.user.id); } catch (e) { return; }
+      if (r.error || !Array.isArray(r.data) || r.data.length) return;
+      // Me quitaron: se borra de este teléfono lo guardado de esa casa
+      const casa = hogar.nombre, hid = hogar.id;
+      Object.keys(localStorage).forEach((k) => { if (k === "cs-hogar" || k === "cs5-mirror" || k === "cs-pendientes-" + hid) try { localStorage.removeItem(k); } catch (e) {} });
+      window.CS_SALIENDO = true; S.set("cs-quitado", { casa, hid }); location.reload();
+    }
+    function iniciar() {
+      if (demo || !hogar) return;
+      setInterval(sigoEnCasa, 60000);
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { sigoEnCasa(); revisar(); } });
+      window.addEventListener("cs-pendiente-rechazado", () => sigoEnCasa());
+      if (!esAdmin() || sin26) return;
+      revisar();
+      try { canal = sb.channel("sol-casa-" + hogar.id).on("postgres_changes", { event: "*", schema: "public", table: "solicitudes", filter: "hogar_id=eq." + hogar.id }, () => revisar()).subscribe(); } catch (e) {}
+    }
+    return { iniciar, solicitudes, marcar, sigoEnCasa, get pendientes() { return pendientes; } };
+  })();
+
   async function abrirAjustes() {
     const host = $("#ajustes"); host.innerHTML = ajustesHTML(); document.body.classList.add("noscroll");
     const cerrar = () => { host.innerHTML = ""; if (!document.querySelector(".sheet-wrap")) document.body.classList.remove("noscroll"); };
@@ -597,17 +854,60 @@
       } catch (err) { if (!err || err.code !== "declined") toastP("No se pudo guardar la copia."); }
     };
     if (!demo) {
-      const fam = await cargarMiembros();
-      const ul = $("#a-fam"); if (ul) ul.innerHTML = fam.map((m) => `<li><span class="ico g">${ico("users")}</span><div><b>${esc(m.nombre || "Sin nombre")}${m.user_id === session.user.id ? " (tú)" : ""}</b><span>${m.rol === "dueño" ? "Creó la casa" : "Miembro"}</span></div></li>`).join("");
+      let fam = await cargarMiembros();
+      const pintarFam = () => { const ul = $("#a-fam"); if (ul) ul.innerHTML = filaMiembros(fam); ul && ul.querySelectorAll("[data-quitar]").forEach((b) => (b.onclick = () => hojaQuitar(fam.find((m) => m.user_id === b.dataset.quitar), recargarFamilia))); };
+      const recargarFamilia = async () => { miembros = []; fam = await cargarMiembros(true); pintarFam(); await pintarSolicitudes(); await pintarBloqueos(); };
+      const pintarSolicitudes = async () => {
+        const w = $("#a-solwrap"); if (!w) return;
+        const lista = await Familia.solicitudes(); Familia.marcar(lista.length);
+        w.hidden = !lista.length; $("#a-soln").textContent = lista.length || "";
+        $("#a-sol").innerHTML = lista.map((r) => `<div class="sol" data-sol="${esc(r.id)}"><div class="sol-q">${window.Actividad ? Actividad.avatar(r.user_id, r.nombre, "md") : ""}<div class="sol-tx"><b>${esc(r.nombre || "Sin nombre")}</b><small>${esc([r.correo, hace(r.creado), r.via === "qr" ? "con QR" : "con código"].filter(Boolean).join(" · "))}</small></div></div>
+          <div class="sol-acc"><button class="btn primary sm" data-aprobar="${esc(r.id)}">${ico("check")}Aprobar</button><button class="btn sm" data-rechazar="${esc(r.id)}">${ico("close")}Rechazar</button></div></div>`).join("");
+        const responder = async (id, si, b) => {
+          b.disabled = true; const r = lista.find((x) => x.id === id);
+          const { error } = await sb.rpc("responder_solicitud", { sol: id, aprobar: si });
+          if (error) { b.disabled = false; return toastP(msgError(error)); }
+          toastP(si ? `${(r && r.nombre) || "La persona"} ya es parte de la casa` : "Solicitud rechazada"); recargarFamilia();
+        };
+        $("#a-sol").querySelectorAll("[data-aprobar]").forEach((b) => (b.onclick = () => responder(b.dataset.aprobar, true, b)));
+        $("#a-sol").querySelectorAll("[data-rechazar]").forEach((b) => (b.onclick = () => responder(b.dataset.rechazar, false, b)));
+      };
+      const pintarBloqueos = async () => {
+        const w = $("#a-bloqwrap"); if (!w) return;
+        const { data } = await sb.from("bloqueos").select("user_id,nombre,creado").eq("hogar_id", hogar.id).order("creado", { ascending: false });
+        const lista = data || []; w.hidden = !lista.length;
+        $("#a-bloq").innerHTML = lista.map((b) => `<li class="mi-fila">${window.Actividad ? Actividad.avatar(b.user_id, b.nombre, "md") : ""}<div><b>${esc(b.nombre || "Sin nombre")}</b><span>No puede pedir unirse a esta casa</span></div><button class="btn sm" data-desb="${esc(b.user_id)}">Desbloquear</button></li>`).join("");
+        $("#a-bloq").querySelectorAll("[data-desb]").forEach((x) => (x.onclick = async () => {
+          x.disabled = true; const { error } = await sb.rpc("desbloquear", { h: hogar.id, quien: x.dataset.desb });
+          if (error) { x.disabled = false; return toastP(msgError(error)); }
+          toastP("Desbloqueado: ya puede volver a pedir unirse"); pintarBloqueos();
+        }));
+      };
+      pintarFam(); pintarBloqueos().catch(() => {}); await pintarSolicitudes().catch(() => {});
+      if ($("#a-qr")) $("#a-qr").onclick = hojaQR;
+      const pintarFoto = () => { const me2 = fam.find((m) => m.user_id === session.user.id); const a = $("#a-fav"); if (a && window.Actividad) a.innerHTML = Actividad.avatar(session.user.id, hogar.miNombre, "xl"); const d = $("#a-fdel"); if (d) d.hidden = !(me2 && me2.foto); };
+      pintarFoto();
+      const subirFoto = async (e) => {
+        const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+        try {
+          const foto = await fotoCuadrada(f);
+          await caps.user.guardarFoto(foto); pintarFoto(); toastP("Foto guardada");
+          pintarFam();
+        } catch (err) { toastP(err && err.code === "sin_columna" ? "Falta un paso en Supabase: pega supabase/familia-2-6.sql." : "No se pudo guardar la foto. Intenta otra vez."); }
+      };
+      ["#a-fcam", "#a-fgal"].forEach((q) => { const i = $(q); if (i) i.onchange = subirFoto; });
+      if ($("#a-fdel")) $("#a-fdel").onclick = async () => { try { await caps.user.guardarFoto(null); pintarFoto(); toastP("Foto quitada"); } catch (e) { toastP("No se pudo quitar la foto."); } };
       $("#a-share").onclick = async () => {
-        const t = `Únete a nuestra casa en Casita Stock: abre ${origen}, entra con tu correo, elige “Unirme con el código” y escribe ${hogar.codigo}`;
+        const t = !sin26 && hogar.invitacion
+          ? `Te invito a nuestra casa en Casita Stock. Abre este enlace, entra con tu correo y toca “Solicitar unirme”: ${enlaceInvitacion(hogar.invitacion)} (o escribe el código ${hogar.codigo}).`
+          : `Únete a nuestra casa en Casita Stock: abre ${origen}, entra con tu correo, elige “Unirme con el código” y escribe ${hogar.codigo}`;
         try { if (navigator.share) await navigator.share({ text: t }); else { await navigator.clipboard.writeText(t); toastP("Invitación copiada"); } } catch (e) {}
       };
-      $("#a-newcode").onclick = async () => {
-        const b = $("#a-newcode"); if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = "¿Seguro? El código anterior dejará de servir"; return; }
+      if ($("#a-newcode")) $("#a-newcode").onclick = async () => {
+        const b = $("#a-newcode"); if (b.dataset.c !== "1") { b.dataset.c = "1"; b.textContent = sin26 ? "¿Seguro? El código anterior dejará de servir" : "¿Seguro? El código y el QR anteriores dejarán de servir"; return; }
         const { data, error } = await sb.rpc("nuevo_codigo", { h: hogar.id });
-        if (error) return toastP("No se pudo cambiar el código.");
-        hogar.codigo = data; S.set("cs-hogar", hogar); abrirAjustes();
+        if (error) return toastP(msgError(error, "No se pudo cambiar el código."));
+        hogar.codigo = data; await cargarHogar(); S.set("cs-hogar", hogar); toastP("Código nuevo listo"); abrirAjustes();
       };
       $("#a-casa").onchange = async (e) => { const n = e.target.value.trim(); if (!n) return; const { error } = await sb.from("hogares").update({ nombre: n }).eq("id", hogar.id); if (!error) { hogar.nombre = n; S.set("cs-hogar", hogar); toastP("Nombre guardado"); } };
       $("#a-yo").onchange = async (e) => { const n = e.target.value.trim(); if (!n) return; const { error } = await sb.from("miembros").update({ nombre: n }).eq("hogar_id", hogar.id).eq("user_id", session.user.id); if (!error) { hogar.miNombre = n; S.set("cs-hogar", hogar); miembros = []; toastP("Nombre guardado"); } };
@@ -655,6 +955,13 @@
     caps = { db: hacerDb(), user: hacerUser(), sample: cfg.ia ? hacerSample() : null, downloads, memoria: hacerMemoria() };
     cerrarGate(); listo();
     cargarMiembros().catch(() => {});
+    Familia.iniciar();
+    const bienvenida = S.get("cs-bienvenida", ""); if (bienvenida) { S.del("cs-bienvenida"); setTimeout(() => toastP(`¡Te aprobaron! Ya eres parte de ${bienvenida}`), 900); }
+    const inv = S.get("cs-invitacion", "");
+    if (inv) {   // Abrió una invitación pero ya tiene casa
+      S.del("cs-invitacion");
+      sb.rpc("ver_invitacion", { clave: inv }).then(({ data }) => { if (data && data.estado !== "miembro") setTimeout(() => toastP(`Abriste una invitación a ${data.casa}, pero ya eres parte de ${hogar.nombre}.`), 1200); }).catch(() => {});
+    }
   }
 
   window.Plataforma = { abrirAjustes, nativo, get demo() { return demo; }, get instalada() { return instalada; }, get esIOS() { return esIOS; }, ready };
