@@ -785,3 +785,51 @@ body.sm-on .fab{display:none}
 /* Encabezado con la campana en pantallas angostas (iPhone SE / mini) */
 @media (max-width:389px){.brand{gap:6px}.brand .mode:not(.off){font-size:0;gap:0}.brand .mode.off{font-size:.7rem}}
 @media (max-width:360px){.brand>svg{display:none}.brand h1{font-size:1.15rem}}
+
+/* 2.6 — Fotos de la familia */
+.av,.list li .av,.av>*{color:#fff}
+.av{position:relative;flex:none;display:inline-grid;place-items:center;border-radius:50%;font:800 1rem/1 var(--display);background:var(--accent);box-shadow:0 0 0 2px var(--surface)}
+.av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.av-sm{width:26px;height:26px;font-size:.75rem}
+.av-md{width:40px;height:40px}
+.av-lg{width:46px;height:46px;font-size:1.15rem}
+.av-xl{width:76px;height:76px;font-size:1.9rem}
+.av-b{position:absolute;right:-3px;bottom:-3px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink,#fff);box-shadow:0 0 0 2px var(--surface)}
+.av-sm .av-b{display:none}
+.av-b svg{width:12px;height:12px}
+.fam-hoy li{align-items:center}
+.fam-hoy li>span:not(.av){flex:1;min-width:0}
+.yo-foto{display:flex;align-items:center;gap:14px;margin:6px 0 8px}
+.yo-acc{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:0}
+.yo-acc .btn{overflow:hidden}
+#a-fam li .av{margin-right:2px}
+.fam-caras{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 4px}
+.fam-cara{display:flex;flex-direction:column;align-items:center;gap:4px;max-width:64px}
+.fam-cara small{font-size:.78rem;color:var(--muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:64px}
+
+/* 2.6 — Invitaciones con aprobación, QR y quitar o bloquear */
+.g-ctr{text-align:center}
+.g-est{display:grid;place-items:center;width:84px;height:84px;border-radius:50%;margin:4px auto 10px;background:var(--soft);color:var(--accent)}
+.g-est svg{width:42px;height:42px}
+.g-est.warn{background:var(--warn-soft);color:var(--warn)}.g-est.bad{background:var(--bad-soft);color:var(--bad)}
+.cnt{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:var(--p-now,#f5c518);color:#111;font:800 .8rem/1 var(--body);vertical-align:middle}
+.cnt:empty{display:none}
+#cfg{position:relative}
+.cnt-sol{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;display:grid;place-items:center;background:var(--p-now,#f5c518);color:#111;font:800 .72rem/1 var(--body);box-shadow:0 0 0 2px var(--surface);pointer-events:none}
+.sol-lista{display:flex;flex-direction:column;gap:12px}
+.sol{border:1px solid var(--line);border-radius:var(--r-card,20px);padding:12px;background:var(--surface)}
+.sol-q{display:flex;align-items:center;gap:12px}.sol-tx{flex:1;min-width:0}.sol-tx b{display:block}
+.sol-tx small{color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}
+.sol-acc{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.sol-acc .btn{flex:1 1 110px;min-width:0;min-height:44px}
+.list li.mi-fila{grid-template-columns:auto 1fr auto;align-items:center}
+.mi-fila b{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.rolt{font-size:.72rem;font-weight:700;color:var(--accent);background:var(--soft);padding:3px 8px;border-radius:10px}
+.mas{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:800 1.2rem/1 var(--body);cursor:pointer}
+.mi-fila .btn.sm{min-height:44px}
+.opc{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;padding:14px;margin:8px 0;border:2px solid var(--line);border-radius:var(--r-ctl,16px);background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.opc>span:last-child{display:flex;flex-direction:column;gap:2px}.opc b{font-weight:700}.opc span span{color:var(--muted);font-size:.92rem}
+.opc .rd{width:22px;height:22px;border-radius:50%;border:2px solid var(--muted);flex:none;margin-top:2px}
+.opc.on{border-color:var(--bad);background:var(--bad-soft)}.opc.on .rd{border:7px solid var(--bad)}
+.opc[data-op="quitar"].on{border-color:var(--accent);background:var(--soft)}.opc[data-op="quitar"].on .rd{border-color:var(--accent)}
+.qrg{width:min(240px,70vw);aspect-ratio:1;margin:6px auto;padding:10px;background:#fff;border:1px solid var(--line);border-radius:18px}
+.qrg svg{width:100%;height:100%;display:block}
